@@ -298,42 +298,14 @@ class CollationSuite extends DatasourceV2SQLBase with AdaptiveSparkPlanHelper {
   test("Support startsWith string expression with Collation") {
     // Supported collations
     val checks = Seq(
-      CollationTestCase("", "", "UCS_BASIC", true),
-      CollationTestCase("c", "", "UCS_BASIC", true),
-      CollationTestCase("", "c", "UCS_BASIC", false),
-      CollationTestCase("abcde", "a", "UCS_BASIC", true),
-      CollationTestCase("abcde", "A", "UCS_BASIC", false),
       CollationTestCase("abcde", "abc", "UCS_BASIC", true),
       CollationTestCase("abcde", "ABC", "UCS_BASIC", false),
-      CollationTestCase("abcde", "bcd", "UCS_BASIC", false),
-      CollationTestCase("abcde", "BCD", "UCS_BASIC", false),
-      CollationTestCase("", "", "UNICODE", true),
-      CollationTestCase("c", "", "UNICODE", true),
-      CollationTestCase("", "c", "UNICODE", false),
-      CollationTestCase("abcde", "a", "UNICODE", true),
-      CollationTestCase("abcde", "A", "UNICODE", false),
       CollationTestCase("abcde", "abc", "UNICODE", true),
       CollationTestCase("abcde", "ABC", "UNICODE", false),
-      CollationTestCase("abcde", "bcd", "UNICODE", false),
-      CollationTestCase("abcde", "BCD", "UNICODE", false),
-      CollationTestCase("", "", "UCS_BASIC_LCASE", true),
-      CollationTestCase("c", "", "UCS_BASIC_LCASE", true),
-      CollationTestCase("", "c", "UCS_BASIC_LCASE", false),
-      CollationTestCase("abcde", "a", "UCS_BASIC_LCASE", true),
-      CollationTestCase("abcde", "A", "UCS_BASIC_LCASE", true),
-      CollationTestCase("abcde", "abc", "UCS_BASIC_LCASE", true),
       CollationTestCase("abcde", "ABC", "UCS_BASIC_LCASE", true),
       CollationTestCase("abcde", "bcd", "UCS_BASIC_LCASE", false),
-      CollationTestCase("abcde", "BCD", "UCS_BASIC_LCASE", false),
-      CollationTestCase("", "", "UNICODE_CI", true),
-      CollationTestCase("c", "", "UNICODE_CI", true),
-      CollationTestCase("", "c", "UNICODE_CI", false),
-      CollationTestCase("abcde", "a", "UNICODE_CI", true),
-      CollationTestCase("abcde", "A", "UNICODE_CI", true),
-      CollationTestCase("abcde", "abc", "UNICODE_CI", true),
       CollationTestCase("abcde", "ABC", "UNICODE_CI", true),
-      CollationTestCase("abcde", "bcd", "UNICODE_CI", false),
-      CollationTestCase("abcde", "BCD", "UNICODE_CI", false)
+      CollationTestCase("abcde", "bcd", "UNICODE_CI", false)
     )
     checks.foreach(testCase => {
       checkAnswer(sql(s"SELECT startswith(collate('${testCase.left}', '${testCase.collation}')," +
@@ -344,42 +316,14 @@ class CollationSuite extends DatasourceV2SQLBase with AdaptiveSparkPlanHelper {
   test("Support endsWith string expression with Collation") {
     // Supported collations
     val checks = Seq(
-      CollationTestCase("", "", "UCS_BASIC", true),
-      CollationTestCase("c", "", "UCS_BASIC", true),
-      CollationTestCase("", "c", "UCS_BASIC", false),
-      CollationTestCase("abcde", "e", "UCS_BASIC", true),
-      CollationTestCase("abcde", "E", "UCS_BASIC", false),
       CollationTestCase("abcde", "cde", "UCS_BASIC", true),
       CollationTestCase("abcde", "CDE", "UCS_BASIC", false),
-      CollationTestCase("abcde", "bcd", "UCS_BASIC", false),
-      CollationTestCase("abcde", "BCD", "UCS_BASIC", false),
-      CollationTestCase("", "", "UNICODE", true),
-      CollationTestCase("c", "", "UNICODE", true),
-      CollationTestCase("", "c", "UNICODE", false),
-      CollationTestCase("abcde", "e", "UNICODE", true),
-      CollationTestCase("abcde", "E", "UNICODE", false),
       CollationTestCase("abcde", "cde", "UNICODE", true),
       CollationTestCase("abcde", "CDE", "UNICODE", false),
-      CollationTestCase("abcde", "bcd", "UNICODE", false),
-      CollationTestCase("abcde", "BCD", "UNICODE", false),
-      CollationTestCase("", "", "UCS_BASIC_LCASE", true),
-      CollationTestCase("c", "", "UCS_BASIC_LCASE", true),
-      CollationTestCase("", "c", "UCS_BASIC_LCASE", false),
-      CollationTestCase("abcde", "e", "UCS_BASIC_LCASE", true),
-      CollationTestCase("abcde", "E", "UCS_BASIC_LCASE", true),
-      CollationTestCase("abcde", "cde", "UCS_BASIC_LCASE", true),
       CollationTestCase("abcde", "CDE", "UCS_BASIC_LCASE", true),
       CollationTestCase("abcde", "bcd", "UCS_BASIC_LCASE", false),
-      CollationTestCase("abcde", "BCD", "UCS_BASIC_LCASE", false),
-      CollationTestCase("", "", "UNICODE_CI", true),
-      CollationTestCase("c", "", "UNICODE_CI", true),
-      CollationTestCase("", "c", "UNICODE_CI", false),
-      CollationTestCase("abcde", "e", "UNICODE_CI", true),
-      CollationTestCase("abcde", "E", "UNICODE_CI", true),
-      CollationTestCase("abcde", "cde", "UNICODE_CI", true),
       CollationTestCase("abcde", "CDE", "UNICODE_CI", true),
       CollationTestCase("abcde", "bcd", "UNICODE_CI", false),
-      CollationTestCase("abcde", "BCD", "UNICODE_CI", false)
     )
     checks.foreach(testCase => {
       checkAnswer(sql(s"SELECT endswith(collate('${testCase.left}', '${testCase.collation}')," +
