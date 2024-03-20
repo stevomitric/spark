@@ -3945,6 +3945,22 @@ object functions {
   def octet_length(e: Column): Column = Column.fn("octet_length", e)
 
   /**
+   * Marks a given column with specified collation.
+   *
+   * @group string_funcs
+   * @since 4.0.0
+   */
+  def collate(e: Column, collation: String): Column = Column.fn("collate", e, lit(collation))
+
+  /**
+   * Returns the collation name of a given column.
+   *
+   * @group string_funcs
+   * @since 4.0.0
+   */
+  def collation(e: Column): Column = Column.fn("collation", e)
+
+  /**
    * Returns true if `str` matches `regexp`, or false otherwise.
    *
    * @group predicate_funcs
@@ -6983,6 +6999,23 @@ object functions {
    */
   @scala.annotation.varargs
   def map_concat(cols: Column*): Column = Column.fn("map_concat", cols: _*)
+
+  /**
+   * Sorts the input map in ascending order based on the natural order of map keys.
+   *
+   * @group map_funcs
+   * @since 4.0.0
+   */
+  def map_sort(e: Column): Column = map_sort(e, asc = true)
+
+  /**
+   * Sorts the input map in ascending or descending order according to the natural ordering
+   * of the map keys.
+   *
+   * @group map_funcs
+   * @since 4.0.0
+   */
+  def map_sort(e: Column, asc: Boolean): Column = Column.fn("map_sort", e, lit(asc))
 
   // scalastyle:off line.size.limit
   /**
