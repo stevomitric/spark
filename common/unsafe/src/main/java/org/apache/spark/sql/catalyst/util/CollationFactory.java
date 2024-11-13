@@ -509,6 +509,9 @@ public final class CollationFactory {
 
       private static int collationNameToId(String originalName, String collationName)
           throws SparkException {
+        if (collationName.equals(UTF8_BINARY_COLLATION.collationName)) {
+          return CollationFactory.UTF8_BINARY_COLLATION_ID;
+        }
 
         int baseId;
         String collationNamePrefix;
