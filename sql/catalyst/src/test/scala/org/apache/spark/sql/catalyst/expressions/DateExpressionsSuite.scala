@@ -41,7 +41,7 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.SQLConf.TimestampTypes
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.types.DataTypeTestUtils.{dayTimeIntervalTypes, yearMonthIntervalTypes}
-import org.apache.spark.unsafe.types.{CalendarInterval, UTF8String}
+import org.apache.spark.unsafe.types.{CalendarInterval, TimestampNanosVal, UTF8String}
 
 class DateExpressionsSuite extends SparkFunSuite with ExpressionEvalHelper {
 
@@ -1270,6 +1270,53 @@ class DateExpressionsSuite extends SparkFunSuite with ExpressionEvalHelper {
         secFrac(timestamp.copy(year = Literal(10))),
         Decimal(10.123456, 16, 6))
     }
+  }
+
+  test("SPARK-57340: extract the seconds part with fraction from nanosecond timestamps") {
+    // TIMESTAMP_NTZ(p) is zone-independent; the sub-microsecond digits are preserved and the
+    // result type scales with the input precision: DECIMAL(p + 2, p).
+    val ldt = LocalDateTime.parse("2019-08-10T11:42:59.123456789")
+    Seq(
+      (9, Decimal(59123456789L, 11, 9)),
+      (8, Decimal(5912345678L, 10, 8)),
+      (7, Decimal(591234567L, 9, 7))).foreach { case (p, expected) =>
+      val expr = SecondWithFraction(Literal.create(ldt, TimestampNTZNanosType(p)), Some("UTC"))
+      assert(expr.dataType === DecimalType(p + 2, p))
+      checkEvaluation(expr, expected)
+    }
+    // The expression's time zone must not affect TIMESTAMP_NTZ results.
+    checkEvaluation(
+      SecondWithFraction(
+        Literal.create(ldt, TimestampNTZNanosType(9)), Some("America/Los_Angeles")),
+      Decimal(59123456789L, 11, 9))
+
+    // TIMESTAMP_LTZ(p): the seconds part comes from the local time in the expression's zone.
+    // All outstanding zones have whole-minute offsets at this instant, so the seconds part and
+    // its fraction are the same everywhere while still exercising the zone-aware path.
+    val instant = Instant.parse("2019-08-10T11:42:59.987654321Z")
+    outstandingTimezonesIds.foreach { zid =>
+      checkEvaluation(
+        SecondWithFraction(Literal.create(instant, TimestampLTZNanosType(9)), Some(zid)),
+        Decimal(59987654321L, 11, 9))
+    }
+
+    // Pre-epoch values: the local time-of-day fields stay non-negative.
+    checkEvaluation(
+      SecondWithFraction(
+        Literal.create(LocalDateTime.parse("1969-12-31T23:59:59.999999999"),
+          TimestampNTZNanosType(9)),
+        Some("UTC")),
+      Decimal(59999999999L, 11, 9))
+
+    // NULL input.
+    checkEvaluation(
+      SecondWithFraction(Literal.create(null, TimestampNTZNanosType(9)), Some("UTC")), null)
+
+    // A hand-built value whose sub-micro digits sit below the precision step is floored.
+    val unfloored = Literal.create(
+      TimestampNanosVal.fromParts(DateTimeUtils.localDateTimeToMicros(ldt), 999.toShort),
+      TimestampNTZNanosType(7))
+    checkEvaluation(SecondWithFraction(unfloored, Some("UTC")), Decimal(591234569L, 9, 7))
   }
 
   test("SPARK-34903: timestamps difference") {

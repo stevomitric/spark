@@ -43,7 +43,7 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.types.StringTypeWithCollation
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.types.DayTimeIntervalType.DAY
-import org.apache.spark.unsafe.types.{CalendarInterval, UTF8String}
+import org.apache.spark.unsafe.types.{CalendarInterval, TimestampNanosVal, UTF8String}
 
 /**
  * Common base class for time zone aware expressions.
@@ -69,6 +69,7 @@ trait TimeZoneAwareExpression extends Expression {
 
   def zoneIdForType(dataType: DataType): ZoneId = dataType match {
     case _: TimestampNTZType => java.time.ZoneOffset.UTC
+    case _: TimestampNTZNanosType => java.time.ZoneOffset.UTC
     case _ => zoneId
   }
 }
@@ -458,12 +459,51 @@ case class Second(child: Expression, timeZoneId: Option[String] = None) extends 
 case class SecondWithFraction(child: Expression, timeZoneId: Option[String] = None)
   extends GetTimeField {
   def this(child: Expression) = this(child, None)
-  // 2 digits for seconds, and 6 digits for the fractional part with microsecond precision.
-  override def dataType: DataType = DecimalType(8, 6)
+
+  // The fractional seconds precision of the nanosecond-precision timestamp types
+  // (`p` in `[7, 9]`), or None for the microsecond timestamp types.
+  @transient private lazy val nanosPrecision: Option[Int] = child.dataType match {
+    case TimestampNTZNanosType(p) => Some(p)
+    case TimestampLTZNanosType(p) => Some(p)
+    case _ => None
+  }
+
+  // 2 digits for seconds, and the input type's fractional seconds digits for the fractional
+  // part: 6 with the microsecond timestamp types, and p in [7, 9] with the
+  // nanosecond-precision timestamp types.
+  override def dataType: DataType = nanosPrecision match {
+    case Some(p) => DecimalType(p + 2, p)
+    case None => DecimalType(8, 6)
+  }
+
+  // Accept the nanosecond-precision timestamp types as-is. Inheriting `AnyTimestampType` alone
+  // would let the implicit cast convert such inputs to its default microsecond timestamp type,
+  // silently dropping the sub-microsecond digits this expression exists to return.
+  override def inputTypes: Seq[AbstractDataType] = child.dataType match {
+    case dt @ (_: TimestampNTZNanosType | _: TimestampLTZNanosType) => Seq(dt)
+    case _ => super.inputTypes
+  }
+
   override def withTimeZone(timeZoneId: String): SecondWithFraction =
     copy(timeZoneId = Option(timeZoneId))
   override val func = DateTimeUtils.getSecondsWithFraction
   override val funcName = "getSecondsWithFraction"
+
+  override protected def nullSafeEval(timestamp: Any): Any = nanosPrecision match {
+    case Some(p) =>
+      DateTimeUtils.getSecondsWithFractionOfTimestampNanos(
+        timestamp.asInstanceOf[TimestampNanosVal], zoneIdInEval, p)
+    case None => super.nullSafeEval(timestamp)
+  }
+
+  override def doGenCode(ctx: CodegenContext, ev: ExprCode): ExprCode = nanosPrecision match {
+    case Some(p) =>
+      val zid = ctx.addReferenceObj("zoneId", zoneIdInEval, classOf[ZoneId].getName)
+      val dtu = DateTimeUtils.getClass.getName.stripSuffix("$")
+      defineCodeGen(ctx, ev, c => s"$dtu.getSecondsWithFractionOfTimestampNanos($c, $zid, $p)")
+    case None => super.doGenCode(ctx, ev)
+  }
+
   override protected def withNewChildInternal(newChild: Expression): SecondWithFraction =
     copy(child = newChild)
 }

@@ -28,8 +28,8 @@ import scala.util.control.NonFatal
 import org.apache.spark.{QueryContext, SparkException, SparkIllegalArgumentException}
 import org.apache.spark.sql.catalyst.util.DateTimeConstants._
 import org.apache.spark.sql.errors.QueryExecutionErrors
-import org.apache.spark.sql.types.{Decimal, DoubleExactNumeric, TimestampNTZType, TimestampType}
-import org.apache.spark.unsafe.types.{CalendarInterval, UTF8String}
+import org.apache.spark.sql.types.{Decimal, DoubleExactNumeric, TimestampNTZNanosType, TimestampNTZType, TimestampType}
+import org.apache.spark.unsafe.types.{CalendarInterval, TimestampNanosVal, UTF8String}
 
 /**
  * Helper functions for converting between internal and external date and time representations.
@@ -146,6 +146,29 @@ object DateTimeUtils extends SparkDateTimeUtils {
    */
   def getSecondsWithFraction(micros: Long, zoneId: ZoneId): Decimal = {
     Decimal(getMicroseconds(micros, zoneId), 8, 6)
+  }
+
+  /**
+   * Returns the seconds part and its fractional part from a nanosecond-precision timestamp
+   * (a `TIMESTAMP_NTZ(p)` / `TIMESTAMP_LTZ(p)` value with `p` in `[7, 9]`).
+   *
+   * @param value The timestamp value: microseconds since the epoch plus the nanoseconds within
+   *              the microsecond.
+   * @param zoneId The time zone ID which the local time-of-day should be obtained in.
+   * @param precision The timestamp fractional seconds precision, which indicates the number of
+   *                  decimal digits maintained in the result.
+   */
+  def getSecondsWithFractionOfTimestampNanos(
+      value: TimestampNanosVal,
+      zoneId: ZoneId,
+      precision: Int): Decimal = {
+    val nanosOfMinute =
+      getMicroseconds(value.epochMicros, zoneId) * NANOS_PER_MICROS + value.nanosWithinMicro
+    // The value is already floored to the type's precision at minting, so the division below is
+    // exact for well-formed inputs and floors (never rounds) otherwise, consistent with the
+    // truncation semantics of the nanosecond timestamp types.
+    val divisor = math.pow(10, TimestampNTZNanosType.NANOS_PRECISION - precision).toLong
+    Decimal(nanosOfMinute / divisor, precision + 2, precision)
   }
 
 

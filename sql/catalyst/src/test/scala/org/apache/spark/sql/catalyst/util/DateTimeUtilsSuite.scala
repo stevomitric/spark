@@ -1964,6 +1964,44 @@ class DateTimeUtilsSuite extends SparkFunSuite with Matchers with SQLHelper {
     }
   }
 
+  test("SPARK-57340: get seconds with fraction from nanosecond timestamps") {
+    val ldt = LocalDateTime.parse("2019-08-10T11:42:59.123456789")
+    // The values are minted at the target precision, so the sub-micro digits are pre-floored.
+    assert(getSecondsWithFractionOfTimestampNanos(
+      localDateTimeToTimestampNanos(ldt, precision = 9), ZoneOffset.UTC, 9) ===
+      Decimal(59123456789L, 11, 9))
+    assert(getSecondsWithFractionOfTimestampNanos(
+      localDateTimeToTimestampNanos(ldt, precision = 8), ZoneOffset.UTC, 8) ===
+      Decimal(5912345678L, 10, 8))
+    assert(getSecondsWithFractionOfTimestampNanos(
+      localDateTimeToTimestampNanos(ldt, precision = 7), ZoneOffset.UTC, 7) ===
+      Decimal(591234567L, 9, 7))
+
+    // Whole seconds and a zero fraction.
+    assert(getSecondsWithFractionOfTimestampNanos(
+      TimestampNanosVal.ZERO, ZoneOffset.UTC, 9) === Decimal(0L, 11, 9))
+
+    // Pre-epoch values: the local time-of-day fields stay non-negative.
+    val preEpoch = Instant.parse("1969-12-31T23:59:59.999999999Z")
+    assert(getSecondsWithFractionOfTimestampNanos(
+      instantToTimestampNanos(preEpoch, precision = 9), ZoneOffset.UTC, 9) ===
+      Decimal(59999999999L, 11, 9))
+
+    // The seconds part is computed in the given time zone: Europe/Paris used LMT (+00:09:21)
+    // before 1891, so the local seconds-of-minute differs from UTC.
+    val paris = getZoneId("Europe/Paris")
+    val old = Instant.parse("1800-01-01T00:00:00.123456789Z")
+    assert(getSecondsWithFractionOfTimestampNanos(
+      instantToTimestampNanos(old, precision = 9), paris, 9) ===
+      Decimal(21123456789L, 11, 9))
+
+    // An unfloored value (sub-micro digits below the precision step) is floored, not rounded.
+    val unfloored = TimestampNanosVal.fromParts(
+      DateTimeUtils.localDateTimeToMicros(ldt), 999.toShort)
+    assert(getSecondsWithFractionOfTimestampNanos(unfloored, ZoneOffset.UTC, 7) ===
+      Decimal(591234569L, 9, 7))
+  }
+
   test("SPARK-57033: instantToTimestampNanos truncates sub-micro to precision") {
     val i = Instant.parse("2019-02-26T16:56:00.123456789Z")
     assert(instantToTimestampNanos(i, precision = 9).nanosWithinMicro === 789)
