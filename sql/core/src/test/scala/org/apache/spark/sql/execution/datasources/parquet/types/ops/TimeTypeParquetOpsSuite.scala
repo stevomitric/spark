@@ -17,6 +17,8 @@
 
 package org.apache.spark.sql.execution.datasources.parquet.types.ops
 
+import java.time.LocalTime
+
 import org.apache.parquet.schema.{LogicalTypeAnnotation, Type, Types}
 import org.apache.parquet.schema.LogicalTypeAnnotation.TimeUnit
 import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName.{INT32, INT64}
@@ -115,6 +117,50 @@ class TimeTypeParquetOpsSuite extends SparkFunSuite {
   // wrong-primitive branch of requireCompatibleParquetType is unreachable for
   // the TIME annotation; the raw-INT64 / TIMESTAMP / DECIMAL / group tests
   // above already exercise the !isPrimitive and "non-TIME annotation" branches.
+
+  // ---------- filter pushdown ops ----------
+
+  test("filterOps accepts LocalTime values and rejects others") {
+    val ops = TimeTypeParquetOps.filterOps
+    assert(ops.acceptsValue(LocalTime.of(1, 2, 3)))
+    assert(!ops.acceptsValue(java.lang.Long.valueOf(1L)))
+    assert(!ops.acceptsValue("12:00:00"))
+  }
+
+  test("filterOps declares the canonical TimeType Parquet encoding") {
+    val ops = TimeTypeParquetOps.filterOps
+    assert(ops.primitiveTypeName === INT64)
+    assert(ops.logicalTypeAnnotation ===
+      LogicalTypeAnnotation.timeType(false, TimeUnit.MICROS))
+  }
+
+  test("filterOps builds predicates for LocalTime, including null for eq/notEq/in") {
+    val ops = TimeTypeParquetOps.filterOps
+    val path = Array("c")
+    val t = LocalTime.of(23, 59, 59, 123456000)
+    assert(ops.makeEq(path, t) != null)
+    assert(ops.makeEq(path, null) != null)
+    assert(ops.makeNotEq(path, null) != null)
+    assert(ops.makeLt(path, t) != null)
+    assert(ops.makeLtEq(path, t) != null)
+    assert(ops.makeGt(path, t) != null)
+    assert(ops.makeGtEq(path, t) != null)
+    assert(ops.makeIn(path, Array[Any](t, null)) != null)
+  }
+
+  test("ParquetTypeOps.filterOpsFor resolves the TimeType encoding and nothing else") {
+    assert(ParquetTypeOps.filterOpsFor(
+      LogicalTypeAnnotation.timeType(false, TimeUnit.MICROS), INT64).isDefined)
+    // A different unit, isAdjustedToUTC=true, primitive, or annotation kind is not the
+    // TimeType encoding, so no framework filter ops is returned (pushdown falls through).
+    assert(ParquetTypeOps.filterOpsFor(
+      LogicalTypeAnnotation.timeType(false, TimeUnit.NANOS), INT64).isEmpty)
+    assert(ParquetTypeOps.filterOpsFor(
+      LogicalTypeAnnotation.timeType(true, TimeUnit.MICROS), INT64).isEmpty)
+    assert(ParquetTypeOps.filterOpsFor(
+      LogicalTypeAnnotation.timeType(false, TimeUnit.MICROS), INT32).isEmpty)
+    assert(ParquetTypeOps.filterOpsFor(null, INT64).isEmpty)
+  }
 
   // ---------- helper ----------
 

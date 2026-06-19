@@ -20,7 +20,8 @@ package org.apache.spark.sql.execution.datasources.parquet.types.ops
 import java.time.ZoneId
 
 import org.apache.parquet.io.api.{Converter, RecordConsumer}
-import org.apache.parquet.schema.Type
+import org.apache.parquet.schema.{LogicalTypeAnnotation, Type}
+import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName
 import org.apache.parquet.schema.Type.Repetition
 
 import org.apache.spark.sql.catalyst.expressions.SpecializedGetters
@@ -200,6 +201,16 @@ private[parquet] trait ParquetTypeOps extends Serializable {
    * Primitive types return None (no sub-fields to clip).
    */
   def parquetStructSchema: Option[StructType] = None
+
+  // ==================== Filter Pushdown ====================
+
+  /**
+   * Parquet filter-pushdown support for this type, or None (the default) to disable
+   * pushdown. See [[ParquetFilterOps]]. Dispatch in `ParquetFilters` is keyed off the
+   * Parquet file column encoding via [[ParquetTypeOps.filterOpsFor]], so the ops also
+   * declares the primitive + logical annotation it owns.
+   */
+  def parquetFilterOps: Option[ParquetFilterOps] = None
 }
 
 /**
@@ -224,4 +235,21 @@ private[parquet] object ParquetTypeOps {
       case _ => None
     }
   }
+
+  /**
+   * Reverse lookup for filter pushdown: given a Parquet field's logical annotation and
+   * primitive type (from the file schema), returns the framework filter ops that owns that
+   * encoding, if any. Used by `ParquetFilters` (via its FrameworkFilterOps extractor) so
+   * framework types participate in predicate pushdown with no per-type changes there.
+   */
+  private[parquet] def filterOpsFor(
+      logicalTypeAnnotation: LogicalTypeAnnotation,
+      primitiveTypeName: PrimitiveTypeName): Option[ParquetFilterOps] =
+    filterOpsList.find { ops =>
+      ops.primitiveTypeName == primitiveTypeName &&
+        ops.logicalTypeAnnotation == logicalTypeAnnotation
+    }
+
+  /** Filter ops for every framework type that supports Parquet predicate pushdown. */
+  private val filterOpsList: Seq[ParquetFilterOps] = Seq(TimeTypeParquetOps.filterOps)
 }

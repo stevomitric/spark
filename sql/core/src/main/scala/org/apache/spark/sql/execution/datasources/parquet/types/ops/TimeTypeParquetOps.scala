@@ -17,9 +17,17 @@
 
 package org.apache.spark.sql.execution.datasources.parquet.types.ops
 
+import java.lang.{Long => JLong}
+import java.time.LocalTime
+import java.time.temporal.ChronoField.MICRO_OF_DAY
+import java.util.HashSet
+
+import org.apache.parquet.filter2.predicate.{FilterApi, FilterPredicate}
+import org.apache.parquet.filter2.predicate.SparkFilterApi.longColumn
 import org.apache.parquet.io.api.{Converter, RecordConsumer}
 import org.apache.parquet.schema.{LogicalTypeAnnotation, Type, Types}
 import org.apache.parquet.schema.LogicalTypeAnnotation.TimeUnit
+import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName
 import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName.INT64
 import org.apache.parquet.schema.Type.Repetition
 
@@ -88,6 +96,11 @@ case class TimeTypeParquetOps(t: TimeType) extends ParquetTypeOps {
   // ==================== Vectorized Read ====================
 
   override def isBatchReadSupported(sqlConf: SQLConf): Boolean = true
+
+  // ==================== Filter Pushdown ====================
+
+  override def parquetFilterOps: Option[ParquetFilterOps] =
+    Some(TimeTypeParquetOps.filterOps)
 }
 
 private[ops] object TimeTypeParquetOps {
@@ -112,6 +125,45 @@ private[ops] object TimeTypeParquetOps {
     if (!ok) {
       throw QueryExecutionErrors.cannotCreateParquetConverterForDataTypeError(
         sparkType, parquetType.toString)
+    }
+  }
+
+  /**
+   * Parquet filter-pushdown ops for TimeType. TimeType is stored as INT64
+   * TIME(MICROS, isAdjustedToUTC=false); filter values are java.time.LocalTime pushed down
+   * as micros-of-day Longs. This is the same conversion the inline TimeType handling in
+   * ParquetFilters used before filter pushdown was routed through the framework, so pushdown
+   * behavior is unchanged. Precision-independent: the Parquet encoding is MICROS for every
+   * TimeType precision.
+   */
+  private[ops] val filterOps: ParquetFilterOps = new ParquetFilterOps {
+    override val logicalTypeAnnotation: LogicalTypeAnnotation =
+      LogicalTypeAnnotation.timeType(false, TimeUnit.MICROS)
+    override val primitiveTypeName: PrimitiveTypeName = INT64
+
+    override def acceptsValue(value: Any): Boolean = value.isInstanceOf[LocalTime]
+
+    private def toMicros(value: Any): JLong =
+      value.asInstanceOf[LocalTime].getLong(MICRO_OF_DAY)
+    private def toMicrosOrNull(value: Any): JLong =
+      if (value == null) null else toMicros(value)
+
+    override def makeEq(columnPath: Array[String], value: Any): FilterPredicate =
+      FilterApi.eq(longColumn(columnPath), toMicrosOrNull(value))
+    override def makeNotEq(columnPath: Array[String], value: Any): FilterPredicate =
+      FilterApi.notEq(longColumn(columnPath), toMicrosOrNull(value))
+    override def makeLt(columnPath: Array[String], value: Any): FilterPredicate =
+      FilterApi.lt(longColumn(columnPath), toMicros(value))
+    override def makeLtEq(columnPath: Array[String], value: Any): FilterPredicate =
+      FilterApi.ltEq(longColumn(columnPath), toMicros(value))
+    override def makeGt(columnPath: Array[String], value: Any): FilterPredicate =
+      FilterApi.gt(longColumn(columnPath), toMicros(value))
+    override def makeGtEq(columnPath: Array[String], value: Any): FilterPredicate =
+      FilterApi.gtEq(longColumn(columnPath), toMicros(value))
+    override def makeIn(columnPath: Array[String], values: Array[Any]): FilterPredicate = {
+      val set = new HashSet[JLong]()
+      values.foreach(v => set.add(toMicrosOrNull(v)))
+      FilterApi.in(longColumn(columnPath), set)
     }
   }
 }
