@@ -30,7 +30,9 @@ import org.apache.parquet.schema.Type.Repetition.REQUIRED
 
 import org.apache.spark.{SparkArithmeticException, SparkFunSuite, SparkRuntimeException}
 import org.apache.spark.sql.catalyst.util.{DateTimeConstants, DateTimeUtils}
+import org.apache.spark.sql.catalyst.util.RebaseDateTime.RebaseSpec
 import org.apache.spark.sql.execution.datasources.parquet.ParentContainerUpdater
+import org.apache.spark.sql.internal.LegacyBehaviorPolicy
 import org.apache.spark.sql.types.{TimestampLTZNanosType, TimestampNTZNanosType}
 import org.apache.spark.unsafe.types.TimestampNanosVal
 
@@ -117,6 +119,38 @@ class TimestampNanosParquetOpsSuite extends SparkFunSuite {
     assert(!TimestampNanosParquetOps.isNanosTimestamp(micros))
     assert(!TimestampNanosParquetOps.isNanosTimestamp(timeNanos))
     assert(!TimestampNanosParquetOps.isNanosTimestamp(raw))
+  }
+
+  test("isMicrosTimestamp recognizes only INT64 TIMESTAMP(MICROS)") {
+    val micros = Types.primitive(INT64, REQUIRED)
+      .as(LogicalTypeAnnotation.timestampType(false, TimeUnit.MICROS)).named("c")
+    val nanos = Types.primitive(INT64, REQUIRED)
+      .as(LogicalTypeAnnotation.timestampType(false, TimeUnit.NANOS)).named("c")
+    val millis = Types.primitive(INT64, REQUIRED)
+      .as(LogicalTypeAnnotation.timestampType(false, TimeUnit.MILLIS)).named("c")
+    val raw = Types.primitive(INT64, REQUIRED).named("c")
+
+    assert(TimestampNanosParquetOps.isMicrosTimestamp(micros))
+    assert(!TimestampNanosParquetOps.isMicrosTimestamp(nanos))
+    assert(!TimestampNanosParquetOps.isMicrosTimestamp(millis))
+    assert(!TimestampNanosParquetOps.isMicrosTimestamp(raw))
+  }
+
+  test("extended newConverter reads INT64 TIMESTAMP(MICROS) as (epochMicros, 0)") {
+    assert(decodeMicros(ltz, isAdjustedToUTC = true, 1234567L) ===
+      TimestampNanosVal.fromParts(1234567L, 0.toShort))
+    assert(decodeMicros(ntz, isAdjustedToUTC = false, -1L) ===
+      TimestampNanosVal.fromParts(-1L, 0.toShort))
+  }
+
+  test("extended newConverter promotes micros beyond the INT64 epoch-nanos range (no *1000)") {
+    // 1e17 micros (~year 5138) would overflow int64 if multiplied by 1000 to epoch-nanos; the
+    // micros->nanos read is range-complete because it sets (epochMicros = value, 0) directly.
+    val farFutureMicros = 100000000000000000L
+    assert(decodeMicros(ltz, isAdjustedToUTC = true, farFutureMicros) ===
+      TimestampNanosVal.fromParts(farFutureMicros, 0.toShort))
+    assert(decodeMicros(ntz, isAdjustedToUTC = false, farFutureMicros) ===
+      TimestampNanosVal.fromParts(farFutureMicros, 0.toShort))
   }
 
   // ---------- (epochMicros, nanosWithinMicro) -> INT64 epoch-nanos packing ----------
@@ -278,6 +312,27 @@ class TimestampNanosParquetOpsSuite extends SparkFunSuite {
       override def set(value: Any): Unit = captured = value
     }
     ops.newConverter(field, updater).asInstanceOf[PrimitiveConverter].addLong(epochNanos)
+    captured
+  }
+
+  private def microsField(isAdjustedToUTC: Boolean): Type =
+    Types.primitive(INT64, REQUIRED)
+      .as(LogicalTypeAnnotation.timestampType(isAdjustedToUTC, TimeUnit.MICROS))
+      .named("c")
+
+  // Builds the extended converter (the one ParquetRowConverter calls) over a TIMESTAMP(MICROS)
+  // field with a CORRECTED (no-op) rebase spec, feeds one micros value through addLong, and returns
+  // the decoded TimestampNanosVal the converter set into its updater.
+  private def decodeMicros(
+      ops: TimestampNanosParquetOps, isAdjustedToUTC: Boolean, micros: Long): Any = {
+    var captured: Any = null
+    val updater = new ParentContainerUpdater {
+      override def set(value: Any): Unit = captured = value
+    }
+    val correctedSpec = RebaseSpec(LegacyBehaviorPolicy.CORRECTED)
+    val converter = ops.newConverter(
+      microsField(isAdjustedToUTC), updater, null, None, correctedSpec, correctedSpec)
+    converter.asInstanceOf[PrimitiveConverter].addLong(micros)
     captured
   }
 
