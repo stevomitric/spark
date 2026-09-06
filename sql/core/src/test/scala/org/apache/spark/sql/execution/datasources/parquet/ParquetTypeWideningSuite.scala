@@ -242,6 +242,28 @@ class ParquetTypeWideningSuite
     }
   }
 
+  // Cross-family reads must fail loudly, not reinterpret the values: the micros->nanos read matches
+  // the file's isAdjustedToUTC to the requested LTZ/NTZ family. Widening is same-family, so this
+  // only guards a deliberately mismatched explicit read schema.
+  for {
+    (fromType: DataType, toType: DataType) <- Seq(
+      TimestampNTZType -> TimestampLTZNanosType(TimestampLTZNanosType.NANOS_PRECISION),
+      TimestampType -> TimestampNTZNanosType(TimestampNTZNanosType.NANOS_PRECISION))
+  }
+  test(s"unsupported cross-family parquet conversion $fromType (micros) -> $toType") {
+    withSQLConf(
+      SQLConf.TIMESTAMP_NANOS_TYPES_ENABLED.key -> "true",
+      SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key ->
+        ParquetOutputTimestampType.TIMESTAMP_MICROS.toString) {
+      checkAllParquetReaders(
+        values = Seq("2020-01-01 12:34:56.123456"),
+        fromType = fromType,
+        toType = toType,
+        expectError = true)
+    }
+  }
+
+
   for {
     (values: Seq[String], fromType: DataType, toType: DataType) <- Seq(
       (Seq("1", Byte.MaxValue.toString), ByteType, IntDecimal),

@@ -169,11 +169,12 @@ public class ParquetVectorUpdaterFactory {
           // TIMESTAMP_NTZ is a new data type and has no legacy files that need to do rebase.
           return new LongAsMicrosUpdater();
         } else if (sparkType instanceof TimestampLTZNanosType &&
-          isTimestampTypeMatched(LogicalTypeAnnotation.TimeUnit.MICROS)) {
+          isTimestampTypeMatched(LogicalTypeAnnotation.TimeUnit.MICROS, true)) {
           // Read side of widening a microsecond LTZ timestamp (TIMESTAMP(6)) to nanosecond
           // precision: old files stay INT64 TIMESTAMP(MICROS); promote each micros value to
-          // (epochMicros = value, nanosWithinMicro = 0). LTZ files can be legacy Julian, so rebase
-          // exactly like the TimestampType read path above.
+          // (epochMicros = value, nanosWithinMicro = 0). The isAdjustedToUTC=true match keeps this
+          // to the LTZ family. LTZ files can be legacy Julian, so rebase exactly like the
+          // TimestampType read path above.
           if ("CORRECTED".equals(datetimeRebaseMode)) {
             return new MicrosAsTimestampNanosUpdater();
           } else {
@@ -181,9 +182,10 @@ public class ParquetVectorUpdaterFactory {
             return new MicrosAsTimestampNanosRebaseUpdater(failIfRebase, datetimeRebaseTz);
           }
         } else if (sparkType instanceof TimestampNTZNanosType &&
-          isTimestampTypeMatched(LogicalTypeAnnotation.TimeUnit.MICROS)) {
+          isTimestampTypeMatched(LogicalTypeAnnotation.TimeUnit.MICROS, false)) {
           // TIMESTAMP_NTZ(nanos) postdates the proleptic Gregorian switch: no legacy files, no
-          // rebase (mirrors the TimestampNTZType read path).
+          // rebase (mirrors the TimestampNTZType read path). The isAdjustedToUTC=false match keeps
+          // this to the NTZ family.
           return new MicrosAsTimestampNanosUpdater();
         } else if (sparkType instanceof DayTimeIntervalType) {
           return new LongUpdater();
@@ -264,6 +266,13 @@ public class ParquetVectorUpdaterFactory {
   boolean isTimestampTypeMatched(LogicalTypeAnnotation.TimeUnit unit) {
     return logicalTypeAnnotation instanceof TimestampLogicalTypeAnnotation annotation &&
       annotation.getUnit() == unit;
+  }
+
+  // Also matches the time-zone family (isAdjustedToUTC). Used when reading a micros column as a
+  // nanosecond type, so a cross-family file (e.g. an NTZ file requested as LTZ) is not mis-decoded.
+  boolean isTimestampTypeMatched(LogicalTypeAnnotation.TimeUnit unit, boolean isAdjustedToUTC) {
+    return logicalTypeAnnotation instanceof TimestampLogicalTypeAnnotation annotation &&
+      annotation.getUnit() == unit && annotation.isAdjustedToUTC() == isAdjustedToUTC;
   }
 
   boolean isUnsignedIntTypeMatched(int bitWidth) {

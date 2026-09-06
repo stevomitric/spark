@@ -121,19 +121,26 @@ class TimestampNanosParquetOpsSuite extends SparkFunSuite {
     assert(!TimestampNanosParquetOps.isNanosTimestamp(raw))
   }
 
-  test("isMicrosTimestamp recognizes only INT64 TIMESTAMP(MICROS)") {
-    val micros = Types.primitive(INT64, REQUIRED)
-      .as(LogicalTypeAnnotation.timestampType(false, TimeUnit.MICROS)).named("c")
-    val nanos = Types.primitive(INT64, REQUIRED)
-      .as(LogicalTypeAnnotation.timestampType(false, TimeUnit.NANOS)).named("c")
-    val millis = Types.primitive(INT64, REQUIRED)
-      .as(LogicalTypeAnnotation.timestampType(false, TimeUnit.MILLIS)).named("c")
-    val raw = Types.primitive(INT64, REQUIRED).named("c")
+  test("isMicrosTimestamp matches INT64 TIMESTAMP(MICROS) of the expected time-zone family") {
+    def field(adjustedToUTC: Boolean, unit: TimeUnit): Type =
+      Types.primitive(INT64, REQUIRED)
+        .as(LogicalTypeAnnotation.timestampType(adjustedToUTC, unit)).named("c")
+    val ltzMicros = field(adjustedToUTC = true, TimeUnit.MICROS)
+    val ntzMicros = field(adjustedToUTC = false, TimeUnit.MICROS)
 
-    assert(TimestampNanosParquetOps.isMicrosTimestamp(micros))
-    assert(!TimestampNanosParquetOps.isMicrosTimestamp(nanos))
-    assert(!TimestampNanosParquetOps.isMicrosTimestamp(millis))
-    assert(!TimestampNanosParquetOps.isMicrosTimestamp(raw))
+    // Unit and time-zone family must both match.
+    assert(TimestampNanosParquetOps.isMicrosTimestamp(ltzMicros, expectedAdjustedToUTC = true))
+    assert(TimestampNanosParquetOps.isMicrosTimestamp(ntzMicros, expectedAdjustedToUTC = false))
+    // Cross-family (adjustment mismatch) is rejected so it cannot be mis-decoded.
+    assert(!TimestampNanosParquetOps.isMicrosTimestamp(ltzMicros, expectedAdjustedToUTC = false))
+    assert(!TimestampNanosParquetOps.isMicrosTimestamp(ntzMicros, expectedAdjustedToUTC = true))
+    // Non-micros encodings never match.
+    assert(!TimestampNanosParquetOps.isMicrosTimestamp(
+      field(adjustedToUTC = false, TimeUnit.NANOS), expectedAdjustedToUTC = false))
+    assert(!TimestampNanosParquetOps.isMicrosTimestamp(
+      field(adjustedToUTC = false, TimeUnit.MILLIS), expectedAdjustedToUTC = false))
+    assert(!TimestampNanosParquetOps.isMicrosTimestamp(
+      Types.primitive(INT64, REQUIRED).named("c"), expectedAdjustedToUTC = false))
   }
 
   test("extended newConverter reads INT64 TIMESTAMP(MICROS) as (epochMicros, 0)") {
@@ -141,6 +148,13 @@ class TimestampNanosParquetOpsSuite extends SparkFunSuite {
       TimestampNanosVal.fromParts(1234567L, 0.toShort))
     assert(decodeMicros(ntz, isAdjustedToUTC = false, -1L) ===
       TimestampNanosVal.fromParts(-1L, 0.toShort))
+  }
+
+  test("extended newConverter rejects a cross-family TIMESTAMP(MICROS) column") {
+    // A micros file whose time-zone family differs from the requested nanos type must fail loudly
+    // rather than reinterpret the values (e.g. an NTZ file requested as an LTZ instant).
+    intercept[SparkRuntimeException](decodeMicros(ltz, isAdjustedToUTC = false, 1L))
+    intercept[SparkRuntimeException](decodeMicros(ntz, isAdjustedToUTC = true, 1L))
   }
 
   test("extended newConverter promotes micros beyond the INT64 epoch-nanos range (no *1000)") {

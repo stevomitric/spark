@@ -89,9 +89,9 @@ private[parquet] trait TimestampNanosParquetOps extends ParquetTypeOps {
 
   override def isBatchReadSupported(sqlConf: SQLConf): Boolean = true
 
-  // Only a canonical INT64 TIMESTAMP(NANOS) column can be vectorized-decoded as a nanos timestamp.
-  // Return None for anything else so the factory falls through to its clean
-  // SchemaColumnConvertNotSupportedException instead of silently mis-reading.
+  // Vectorized-decode only the canonical INT64 TIMESTAMP(NANOS) encoding here; return None for
+  // anything else. The factory then handles an INT64 TIMESTAMP(MICROS) column (promoting it to
+  // nanos) and raises SchemaColumnConvertNotSupportedException for the rest.
   override def getVectorUpdater(descriptor: ColumnDescriptor): Option[ParquetVectorUpdater] = {
     val parquetType = descriptor.getPrimitiveType
     if (TimestampNanosParquetOps.isNanosTimestamp(parquetType)) {
@@ -152,7 +152,7 @@ private[parquet] trait TimestampNanosParquetOps extends ParquetTypeOps {
       int96RebaseSpec: RebaseSpec): Converter with HasParentContainerUpdater = {
     if (TimestampNanosParquetOps.isNanosTimestamp(parquetType)) {
       nanosConverter(updater)
-    } else if (TimestampNanosParquetOps.isMicrosTimestamp(parquetType)) {
+    } else if (TimestampNanosParquetOps.isMicrosTimestamp(parquetType, isAdjustedToUTC)) {
       microsAsNanosConverter(updater, datetimeRebaseSpec)
     } else {
       throw QueryExecutionErrors.cannotCreateParquetConverterForDataTypeError(
@@ -231,18 +231,22 @@ private[ops] object TimestampNanosParquetOps {
       })
 
   /**
-   * Whether the Parquet field is an INT64 TIMESTAMP(MICROS) column, i.e. the on-disk encoding of a
-   * microsecond-precision timestamp (TIMESTAMP(6)). Such a column can be read as a nanosecond
-   * timestamp -- the read side of widening TIMESTAMP(6) to nanosecond precision -- by promoting
-   * each micros value to (epochMicros = value, nanosWithinMicro = 0). Matched on the unit only, the
-   * same way `ParquetVectorUpdaterFactory.isTimestampTypeMatched` matches the microsecond read
-   * path; the LTZ/NTZ family is enforced upstream (type widening is same-family only).
+   * Whether the Parquet field is an INT64 TIMESTAMP(MICROS) column of the given time-zone family,
+   * i.e. the on-disk encoding of a microsecond-precision timestamp (TIMESTAMP(6)). Such a column
+   * can be read as a nanosecond timestamp -- the read side of widening TIMESTAMP(6) to nanosecond
+   * precision -- by promoting each micros value to (epochMicros = value, nanosWithinMicro = 0).
+   *
+   * `expectedAdjustedToUTC` must equal the requested type's family (true for LTZ, false for NTZ) so
+   * an explicit read schema cannot silently reinterpret a cross-family micros file (e.g. reading an
+   * NTZ file as an LTZ instant). Widening only ever pairs same-family types, so this guard just
+   * fails a deliberately mismatched `.schema(...)` loudly instead of mis-decoding.
    */
-  private[ops] def isMicrosTimestamp(parquetType: Type): Boolean =
+  private[ops] def isMicrosTimestamp(parquetType: Type, expectedAdjustedToUTC: Boolean): Boolean =
     parquetType.isPrimitive &&
       parquetType.asPrimitiveType.getPrimitiveTypeName == INT64 &&
       (parquetType.getLogicalTypeAnnotation match {
-        case ts: TimestampLogicalTypeAnnotation => ts.getUnit == TimeUnit.MICROS
+        case ts: TimestampLogicalTypeAnnotation =>
+          ts.getUnit == TimeUnit.MICROS && ts.isAdjustedToUTC == expectedAdjustedToUTC
         case _ => false
       })
 
