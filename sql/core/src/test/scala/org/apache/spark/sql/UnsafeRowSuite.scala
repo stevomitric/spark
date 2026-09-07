@@ -133,7 +133,9 @@ class UnsafeRowSuite extends SparkFunSuite {
     // included in `DataTypeTestUtils.atomicTypes` but should still return null for null columns
     // (their physical row support was added in SPARK-56981).
     val typesToCheck: Set[DataType] = DataTypeTestUtils.atomicTypes.toSet[DataType] ++
-      Set(TimestampNTZNanosType(9), TimestampLTZNanosType(9))
+      Set(
+        TimestampNTZNanosType(7), TimestampNTZNanosType(8), TimestampNTZNanosType(9),
+        TimestampLTZNanosType(7), TimestampLTZNanosType(8), TimestampLTZNanosType(9))
     for (dataType <- typesToCheck) {
       assert(unsafeRow.get(0, dataType) === null)
     }
