@@ -18,6 +18,7 @@
 package org.apache.spark.sql.catalyst.statsEstimation
 
 import java.sql.{Date, Timestamp}
+import java.time.LocalTime
 
 import scala.collection.mutable
 
@@ -472,6 +473,7 @@ class JoinEstimationSuite extends StatsEstimationTestBase {
       val dec = Decimal("1.000000000000000000")
       val date = DateTimeUtils.fromJavaDate(Date.valueOf("2016-05-08"))
       val timestamp = DateTimeUtils.fromJavaTimestamp(Timestamp.valueOf("2016-05-08 00:00:01"))
+      val time = DateTimeUtils.localTimeToNanos(LocalTime.of(0, 0, 1))
       mutable.LinkedHashMap[Attribute, ColumnStat](
         AttributeReference("cbool", BooleanType)() -> ColumnStat(distinctCount = Some(1),
           min = Some(false), max = Some(false),
@@ -506,6 +508,9 @@ class JoinEstimationSuite extends StatsEstimationTestBase {
           nullCount = Some(0), avgLen = Some(4), maxLen = Some(4)),
         AttributeReference("ctimestamp", TimestampType)() -> ColumnStat(distinctCount = Some(1),
           min = Some(timestamp), max = Some(timestamp),
+          nullCount = Some(0), avgLen = Some(8), maxLen = Some(8)),
+        AttributeReference("ctime", TimeType())() -> ColumnStat(distinctCount = Some(1),
+          min = Some(time), max = Some(time),
           nullCount = Some(0), avgLen = Some(8), maxLen = Some(8))
       )
     }
