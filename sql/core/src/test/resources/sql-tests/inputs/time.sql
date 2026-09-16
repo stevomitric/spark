@@ -115,6 +115,12 @@ SELECT cast("12:34:56.789" as time(3));
 SELECT cast("12:34:56.789" as time(6));
 SELECT cast("12:34:56.789012" as time without time zone);
 
+-- cast integral to time: the value is read as seconds of day
+SELECT cast(0 as time);
+SELECT cast(3661 as time(6));
+SELECT cast(86399 as time);
+SELECT cast(0 as time without time zone);
+
 -- cast time to time
 SELECT cast(cast('12:00' as time(0)) as time(2));
 SELECT cast(('23:59:59.001001' :: time(6)) as time(4));

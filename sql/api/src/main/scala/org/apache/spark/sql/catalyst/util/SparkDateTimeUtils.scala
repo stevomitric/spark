@@ -390,6 +390,22 @@ trait SparkDateTimeUtils {
   def nanosToLocalTime(nanos: Long): LocalTime = LocalTime.ofNanoOfDay(nanos)
 
   /**
+   * Converts an integral number of seconds of day to the nanosecond-of-day representation of a
+   * `TIME(precision)` value. This is the inverse of the `TIME -> integral` cast, which returns
+   * `Math.floorDiv(nanos, NANOS_PER_SECOND)`, so the input is read as whole seconds since midnight
+   * and must lie in `[0, SECONDS_PER_DAY)`; a value outside that range is not a valid time of day
+   * and yields `None`. The (already second-aligned) result is truncated to the target precision to
+   * stay consistent with the other casts to `TIME`.
+   */
+  def integralToTime(seconds: Long, precision: Int): Option[Long] = {
+    if (seconds < 0 || seconds >= SECONDS_PER_DAY) {
+      None
+    } else {
+      Some(truncateTimeToPrecision(seconds * NANOS_PER_SECOND, precision))
+    }
+  }
+
+  /**
    * Extracts the time-of-day component (nanoseconds since midnight) from a `TIMESTAMP_NTZ`
    * microsecond value. `TIMESTAMP_NTZ` is a UTC wall-clock value, so its time-of-day is the value
    * taken modulo one day. `floorMod` keeps the result in `[0, NANOS_PER_DAY)` even for pre-epoch

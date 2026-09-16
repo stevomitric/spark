@@ -22,7 +22,7 @@ import java.time.{Duration, LocalDate, LocalDateTime, LocalTime, Period}
 import java.time.temporal.ChronoUnit
 import java.util.{Calendar, Locale, TimeZone}
 
-import org.apache.spark.{SparkException, SparkFunSuite, SparkIllegalArgumentException}
+import org.apache.spark.{SparkArithmeticException, SparkException, SparkFunSuite, SparkIllegalArgumentException}
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.DataTypeMismatch
@@ -2394,6 +2394,48 @@ abstract class CastSuiteBase extends SparkFunSuite with ExpressionEvalHelper {
       // Cast cannot be performed from `toType` to `fromType`.
       assert(!Cast.canCast(toType, fromType))
       assert(!Cast.canAnsiCast(toType, fromType))
+    }
+  }
+
+  test("cast integral to time") {
+    // Integrals can be cast to TIME (the inverse of the TIME -> integral cast). Decimal, float and
+    // double are intentionally unsupported.
+    Seq[DataType](ByteType, ShortType, IntegerType, LongType).foreach { fromType =>
+      Seq(TimeType(0), TimeType(3), TimeType(6), TimeType(9)).foreach { toType =>
+        assert(Cast.canCast(fromType, toType))
+        assert(Cast.canAnsiCast(fromType, toType))
+      }
+    }
+    Seq(FloatType, DoubleType, DecimalType.USER_DEFAULT, DecimalType(10, 5)).foreach { fromType =>
+      assert(!Cast.canCast(fromType, TimeType()))
+      assert(!Cast.canAnsiCast(fromType, TimeType()))
+    }
+
+    // An integral value is read as whole seconds of day, identically across integral widths.
+    checkEvaluation(cast(Literal.create(0, IntegerType), TimeType()), localTime())
+    checkEvaluation(cast(Literal.create(1, IntegerType), TimeType()), localTime(0, 0, 1))
+    checkEvaluation(cast(Literal.create(100, IntegerType), TimeType()), localTime(0, 1, 40))
+    checkEvaluation(cast(Literal.create(3661, IntegerType), TimeType()), localTime(1, 1, 1))
+    checkEvaluation(cast(Literal.create(86399, IntegerType), TimeType()), localTime(23, 59, 59))
+    checkEvaluation(cast(Literal.create(100.toByte, ByteType), TimeType()), localTime(0, 1, 40))
+    checkEvaluation(cast(Literal.create(10000.toShort, ShortType), TimeType()),
+      localTime(2, 46, 40))
+    checkEvaluation(cast(Literal.create(86399L, LongType), TimeType()), localTime(23, 59, 59))
+    // A whole-second value is unaffected by the target precision.
+    checkEvaluation(cast(Literal.create(3661, IntegerType), TimeType(3)), localTime(1, 1, 1))
+
+    // Values that are not a valid time of day (negative, >= 24:00:00, or too large to be a time)
+    // overflow the TIME domain: ANSI mode throws, non-ANSI and try mode return NULL.
+    Seq(
+      Literal.create(-1, IntegerType),
+      Literal.create(86400, IntegerType),
+      Literal.create(86400L, LongType),
+      Literal.create(Long.MaxValue, LongType)).foreach { lit =>
+      if (evalMode == EvalMode.ANSI) {
+        checkExceptionInExpression[SparkArithmeticException](cast(lit, TimeType()), "CAST_OVERFLOW")
+      } else {
+        checkEvaluation(cast(lit, TimeType()), null)
+      }
     }
   }
 

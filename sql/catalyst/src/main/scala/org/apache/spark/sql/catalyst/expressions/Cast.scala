@@ -157,6 +157,9 @@ object Cast extends QueryErrorsBase {
 
     case (_: TimeType, _: TimeType) => true
     case (_: TimeType, _: IntegralType) => true
+    // Integral -> TIME is the inverse of the TIME -> integral cast above: the value is read as
+    // seconds of day.
+    case (_: IntegralType, _: TimeType) => true
 
     // TIME(p) <-> TIMESTAMP_NTZ(q) / TIMESTAMP_LTZ(q), q in [6, 9] (precision 6 is the micro
     // TimestampNTZType / TimestampType, [7, 9] is TimestampNTZNanosType / TimestampLTZNanosType).
@@ -321,6 +324,9 @@ object Cast extends QueryErrorsBase {
 
     case (_: TimeType, _: TimeType) => true
     case (_: TimeType, _: IntegralType) => true
+    // Integral -> TIME is the inverse of the TIME -> integral cast above: the value is read as
+    // seconds of day.
+    case (_: IntegralType, _: TimeType) => true
 
     // TIME(p) <-> TIMESTAMP_NTZ(q) / TIMESTAMP_LTZ(q), q in [6, 9] (precision 6 is the micro
     // TimestampNTZType / TimestampType, [7, 9] is TimestampNTZNanosType / TimestampLTZNanosType).
@@ -556,6 +562,8 @@ object Cast extends QueryErrorsBase {
 
     case (TimestampType, ByteType | ShortType | IntegerType) => true
     case (_: TimeType, ByteType | ShortType) => true
+    // Integral -> TIME returns NULL for out-of-range (not a time of day) inputs in non-ANSI mode.
+    case (_: IntegralType, _: TimeType) => true
     case (FloatType | DoubleType, TimestampType) => true
     case (TimestampType, DateType) => false
     case (_: TimestampLTZNanosType, DateType) => false
@@ -1059,6 +1067,20 @@ case class Cast(
       buildCast[TimestampNanosVal](_, v => microsToDays(v.epochMicros, ZoneOffset.UTC))
   }
 
+  // Resolves the result of an integral -> TIME conversion: an out-of-range value (`None`, i.e. not
+  // a valid time of day) overflows the TIME domain, which throws in ANSI mode and yields NULL
+  // otherwise. `value` is the original integral input, used for the error message.
+  private[this] def timeOrOverflow(
+      nanos: Option[Long], value: Any, from: DataType, to: TimeType): Any = {
+    nanos.getOrElse {
+      if (ansiEnabled) {
+        throw QueryExecutionErrors.castingCauseOverflowError(value, from, to)
+      } else {
+        null
+      }
+    }
+  }
+
   private[this] def castToTime(from: DataType, to: TimeType): Any => Any = from match {
     case _: StringType =>
       if (ansiEnabled) {
@@ -1068,6 +1090,10 @@ case class Cast(
         buildCast[UTF8String](_, s => DateTimeUtils.stringToTime(s)
           .map(DateTimeUtils.truncateTimeToPrecision(_, to.precision)).orNull)
       }
+    case x: IntegralType =>
+      b => timeOrOverflow(
+        DateTimeUtils.integralToTime(PhysicalIntegralType.integral(x).toLong(b), to.precision),
+        b, from, to)
     case _: TimeType =>
       buildCast[Long](_, nanos => DateTimeUtils.truncateTimeToPrecision(nanos, to.precision))
     case TimestampNTZType =>
@@ -1835,10 +1861,37 @@ case class Cast(
             $evPrim = $dateTimeUtilsCls.truncateTimeToPrecision(
               $dateTimeUtilsCls.timestampLTZNanosToNanosOfDay($c, $zid), ${to.precision});
           """
+      case _: IntegralType =>
+        val longOpt = ctx.freshVariable("longOpt", classOf[Option[Long]])
+        (c, evPrim, evNull) =>
+          code"""
+            scala.Option $longOpt = $dateTimeUtilsCls.integralToTime((long) $c, ${to.precision});
+            if ($longOpt.isDefined()) {
+              $evPrim = ((Long) $longOpt.get()).longValue();
+            } else {
+              ${integralToTimeOverflowCode(c, evNull, from, to, ctx)}
+            }
+          """
       // Unreachable for valid casts (see castToTime). Fail fast at codegen time instead of
       // silently emitting a null, matching the interpreted path.
       case _ =>
         throw SparkException.internalError(s"Cannot cast $from to ${to.typeName}.")
+    }
+  }
+
+  // Codegen counterpart of `timeOrOverflow`: throws in ANSI mode, emits NULL otherwise.
+  private[this] def integralToTimeOverflowCode(
+      c: ExprValue,
+      evNull: ExprValue,
+      from: DataType,
+      to: TimeType,
+      ctx: CodegenContext): Block = {
+    if (ansiEnabled) {
+      val fromDt = ctx.addReferenceObj("from", from, from.getClass.getName)
+      val toDt = ctx.addReferenceObj("to", to, to.getClass.getName)
+      code"throw QueryExecutionErrors.castingCauseOverflowError($c, $fromDt, $toDt);"
+    } else {
+      code"$evNull = true;"
     }
   }
 
