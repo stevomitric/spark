@@ -523,6 +523,7 @@ SELECT current_timestamp(9) = current_timestamp(9), now(9) = current_timestamp(9
 -- Out-of-range precision is rejected.
 SELECT current_timestamp(3);
 SELECT current_timestamp(10);
+SELECT current_timestamp(4294967305);
 
 -- SPARK-57841: end-to-end coverage for operators that ride on the resolved widening (SPARK-57454)
 -- and complex-type access over nanosecond values, mirroring timestamp-ntz-nanos.sql for the LTZ

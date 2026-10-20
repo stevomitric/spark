@@ -3836,8 +3836,9 @@ class DateExpressionsSuite extends SparkFunSuite with ExpressionEvalHelper {
     assert(CurrentTimestampExpressionBuilder.build("current_timestamp", Seq(Add(Literal(4),
       Literal(5)))) === CurrentTimestampNanos(9))
 
-    // Out-of-range precision (other than 6) is rejected with INVALID_TIMESTAMP_PRECISION.
-    Seq(0, 3, 5, 10).foreach { p =>
+    // Out-of-range precision (other than 6) is rejected with INVALID_TIMESTAMP_PRECISION. A
+    // BIGINT precision does not wrap into range.
+    Seq[Any](0, 3, 5, 10, 4294967305L).foreach { p =>
       checkError(
         exception = intercept[SparkException] {
           CurrentTimestampExpressionBuilder.build("current_timestamp", Seq(Literal(p)))
@@ -3895,7 +3896,7 @@ class DateExpressionsSuite extends SparkFunSuite with ExpressionEvalHelper {
       assert(built.dataType === TimestampNTZNanosType(p))
     }
 
-    Seq(0, 3, 5, 10).foreach { p =>
+    Seq[Any](0, 3, 5, 10, 4294967305L).foreach { p =>
       checkError(
         exception = intercept[SparkException] {
           LocalTimestampExpressionBuilder.build("localtimestamp", Seq(Literal(p)))

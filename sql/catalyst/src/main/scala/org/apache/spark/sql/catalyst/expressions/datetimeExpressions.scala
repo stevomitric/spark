@@ -294,7 +294,8 @@ private[expressions] object CurrentTimestampPrecision {
     if (value == null) {
       throw QueryCompilationErrors.unexpectedNullError("precision", precision)
     }
-    val p = value.asInstanceOf[Number].intValue()
+    // Range-check the long value so a BIGINT precision can't wrap into range.
+    val p = value.asInstanceOf[Number].longValue()
     // Reject out-of-range precisions before the feature-flag check so the error is always
     // INVALID_TIMESTAMP_PRECISION, not FEATURE_NOT_ENABLED (mirrors the TIMESTAMP(p) type parser).
     if (p != 6 &&
@@ -304,7 +305,7 @@ private[expressions] object CurrentTimestampPrecision {
     if (p != 6) {
       DataTypeErrors.checkTimestampNanosTypesEnabled()
     }
-    p
+    p.toInt
   }
 }
 

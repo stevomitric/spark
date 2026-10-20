@@ -452,6 +452,7 @@ SELECT localtimestamp(9) = localtimestamp(9);
 -- Out-of-range precision is rejected.
 SELECT localtimestamp(3);
 SELECT localtimestamp(10);
+SELECT localtimestamp(4294967305);
 
 -- SPARK-57841: end-to-end coverage for operators that ride on the resolved widening (SPARK-57454)
 -- and complex-type access over nanosecond values. Every case turns on the SUB-MICROSECOND remainder

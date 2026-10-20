@@ -1439,6 +1439,22 @@ org.apache.spark.SparkException
 
 
 -- !query
+SELECT localtimestamp(4294967305)
+-- !query schema
+struct<>
+-- !query output
+org.apache.spark.SparkException
+{
+  "errorClass" : "INVALID_TIMESTAMP_PRECISION",
+  "sqlState" : "22023",
+  "messageParameters" : {
+    "precision" : "4294967305",
+    "type" : "TIMESTAMP_NTZ"
+  }
+}
+
+
+-- !query
 SELECT c FROM (SELECT TIMESTAMP_NTZ '2020-01-01 00:00:00.000000001' AS c
     UNION ALL SELECT TIMESTAMP_NTZ '2020-01-01 00:00:00.000000999')
   INTERSECT SELECT TIMESTAMP_NTZ '2020-01-01 00:00:00.000000001' ORDER BY c
