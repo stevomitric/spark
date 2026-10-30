@@ -964,12 +964,13 @@ public class CollationAwareUTF8String {
 
   private static int findIndex(final StringSearch stringSearch, int count) {
     assert(count >= 0);
-    int index = 0;
+    int index = MATCH_NOT_FOUND;
     while (count > 0) {
       int nextIndex = stringSearch.next();
       if (nextIndex == StringSearch.DONE) {
         return MATCH_NOT_FOUND;
-      } else if (nextIndex == index && index != 0) {
+      } else if (nextIndex == index) {
+        // ICU repeats a match when it restarts inside a surrogate pair or contraction.
         stringSearch.setIndex(stringSearch.getIndex() + stringSearch.getMatchLength());
       } else {
         count--;

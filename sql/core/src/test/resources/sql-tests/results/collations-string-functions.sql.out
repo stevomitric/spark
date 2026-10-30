@@ -854,6 +854,14 @@ kitten	sitTing
 
 
 -- !query
+select substring_index('🙃a🙃b' collate unicode, '🙃', 2), substring_index('🙃🙃a' collate unicode_ci, '🙃', 2), substring_index('chch' collate cs, 'ch', 2)
+-- !query schema
+struct<substring_index(collate(🙃a🙃b, unicode), '🙃' collate UNICODE, 2):string collate UNICODE,substring_index(collate(🙃🙃a, unicode_ci), '🙃' collate UNICODE_CI, 2):string collate UNICODE_CI,substring_index(collate(chch, cs), 'ch' collate cs, 2):string collate cs>
+-- !query output
+🙃a	🙃	ch
+
+
+-- !query
 select instr(utf8_binary, utf8_lcase) from t1
 -- !query schema
 struct<>
@@ -1182,6 +1190,14 @@ struct<instr(utf8_binary, a, 0, 1):int>
 0
 0
 0
+
+
+-- !query
+select instr('🙃a🙃b' collate unicode, '🙃', 1, 2), instr('🙃🙃a' collate unicode_ci, '🙃', 1, 2), instr('chch' collate cs, 'ch', 1, 2)
+-- !query schema
+struct<instr(collate(🙃a🙃b, unicode), '🙃' collate UNICODE, 1, 2):int,instr(collate(🙃🙃a, unicode_ci), '🙃' collate UNICODE_CI, 1, 2):int,instr(collate(chch, cs), 'ch' collate cs, 1, 2):int>
+-- !query output
+3	2	3
 
 
 -- !query

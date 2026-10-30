@@ -518,6 +518,13 @@ Project [substring_index(cast(utf8_binary#x as string collate UTF8_LCASE_RTRIM),
 
 
 -- !query
+select substring_index('🙃a🙃b' collate unicode, '🙃', 2), substring_index('🙃🙃a' collate unicode_ci, '🙃', 2), substring_index('chch' collate cs, 'ch', 2)
+-- !query analysis
+Project [substring_index(collate(🙃a🙃b, unicode), 🙃, 2) AS substring_index(collate(🙃a🙃b, unicode), '🙃' collate UNICODE, 2)#x, substring_index(collate(🙃🙃a, unicode_ci), 🙃, 2) AS substring_index(collate(🙃🙃a, unicode_ci), '🙃' collate UNICODE_CI, 2)#x, substring_index(collate(chch, cs), ch, 2) AS substring_index(collate(chch, cs), 'ch' collate cs, 2)#x]
++- OneRowRelation
+
+
+-- !query
 select instr(utf8_binary, utf8_lcase) from t1
 -- !query analysis
 org.apache.spark.sql.AnalysisException
@@ -696,6 +703,13 @@ select instr(utf8_binary, 'a', 0, 1) from t1
 Project [instr(utf8_binary#x, a, 0, 1) AS instr(utf8_binary, a, 0, 1)#x]
 +- SubqueryAlias spark_catalog.default.t1
    +- Relation spark_catalog.default.t1[s#x,utf8_binary#x,utf8_lcase#x] parquet
+
+
+-- !query
+select instr('🙃a🙃b' collate unicode, '🙃', 1, 2), instr('🙃🙃a' collate unicode_ci, '🙃', 1, 2), instr('chch' collate cs, 'ch', 1, 2)
+-- !query analysis
+Project [instr(collate(🙃a🙃b, unicode), 🙃, 1, 2) AS instr(collate(🙃a🙃b, unicode), '🙃' collate UNICODE, 1, 2)#x, instr(collate(🙃🙃a, unicode_ci), 🙃, 1, 2) AS instr(collate(🙃🙃a, unicode_ci), '🙃' collate UNICODE_CI, 1, 2)#x, instr(collate(chch, cs), ch, 1, 2) AS instr(collate(chch, cs), 'ch' collate cs, 1, 2)#x]
++- OneRowRelation
 
 
 -- !query

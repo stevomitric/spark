@@ -2737,6 +2737,21 @@ public class CollationSupportSuite {
     assertSubstringIndex("a🙃b🙃c", "d", -1, UTF8_LCASE, "a🙃b🙃c");
     assertSubstringIndex("a🙃b🙃c", "d", -1, UNICODE, "a🙃b🙃c");
     assertSubstringIndex("a🙃b🙃c", "d", -1, UNICODE_CI, "a🙃b🙃c");
+    // Leading delimiter that ICU reports twice (surrogate pair or contraction).
+    assertSubstringIndex("🙃a🙃b", "🙃", 2, UTF8_BINARY, "🙃a");
+    assertSubstringIndex("🙃a🙃b", "🙃", 2, UTF8_LCASE, "🙃a");
+    assertSubstringIndex("🙃a🙃b", "🙃", 2, UNICODE, "🙃a");
+    assertSubstringIndex("🙃a🙃b", "🙃", 2, UNICODE_CI, "🙃a");
+    assertSubstringIndex("🙃🙃a", "🙃", 2, UTF8_BINARY, "🙃");
+    assertSubstringIndex("🙃🙃a", "🙃", 2, UTF8_LCASE, "🙃");
+    assertSubstringIndex("🙃🙃a", "🙃", 2, UNICODE, "🙃");
+    assertSubstringIndex("🙃🙃a", "🙃", 2, UNICODE_CI, "🙃");
+    assertSubstringIndex("🙃a", "🙃", 2, UTF8_BINARY, "🙃a");
+    assertSubstringIndex("🙃a", "🙃", 2, UTF8_LCASE, "🙃a");
+    assertSubstringIndex("🙃a", "🙃", 2, UNICODE, "🙃a");
+    assertSubstringIndex("🙃a", "🙃", 2, UNICODE_CI, "🙃a");
+    assertSubstringIndex("chch", "ch", 2, "CS", "ch");
+    assertSubstringIndex("cha", "ch", 2, "CS", "cha");
     assertSubstringIndex("a.b.c", ".", Integer.MIN_VALUE, UTF8_BINARY, "a.b.c");
     assertSubstringIndex("a.b.c", ".", Integer.MIN_VALUE, UTF8_LCASE, "a.b.c");
     assertSubstringIndex("a.b.c", ".", Integer.MIN_VALUE, UNICODE, "a.b.c");
@@ -4346,6 +4361,21 @@ public class CollationSupportSuite {
     assertStringInstrWithOccurrence(emojiStr, "🙃", 1, 2, UNICODE_CI, 3);
     assertStringInstrWithOccurrence(emojiStr, "🙃", -2, 1, UNICODE, 5);
     assertStringInstrWithOccurrence(emojiStr, "🙃", -2, 1, UTF8_BINARY, 5);
+    // Leading match that ICU reports twice (surrogate pair or contraction).
+    assertStringInstrWithOccurrence("🙃a🙃b", "🙃", 1, 2, UTF8_BINARY, 3);
+    assertStringInstrWithOccurrence("🙃a🙃b", "🙃", 1, 2, UTF8_LCASE, 3);
+    assertStringInstrWithOccurrence("🙃a🙃b", "🙃", 1, 2, UNICODE, 3);
+    assertStringInstrWithOccurrence("🙃a🙃b", "🙃", 1, 2, UNICODE_CI, 3);
+    assertStringInstrWithOccurrence("🙃🙃a", "🙃", 1, 2, UTF8_BINARY, 2);
+    assertStringInstrWithOccurrence("🙃🙃a", "🙃", 1, 2, UTF8_LCASE, 2);
+    assertStringInstrWithOccurrence("🙃🙃a", "🙃", 1, 2, UNICODE, 2);
+    assertStringInstrWithOccurrence("🙃🙃a", "🙃", 1, 2, UNICODE_CI, 2);
+    assertStringInstrWithOccurrence("🙃a", "🙃", 1, 2, UTF8_BINARY, 0);
+    assertStringInstrWithOccurrence("🙃a", "🙃", 1, 2, UTF8_LCASE, 0);
+    assertStringInstrWithOccurrence("🙃a", "🙃", 1, 2, UNICODE, 0);
+    assertStringInstrWithOccurrence("🙃a", "🙃", 1, 2, UNICODE_CI, 0);
+    assertStringInstrWithOccurrence("chch", "ch", 1, 2, "CS", 3);
+    assertStringInstrWithOccurrence("cha", "ch", 1, 2, "CS", 0);
     assertStringInstrWithOccurrence("x🙃yz🙃z🙃", "z🙃", -1, 1, UTF8_LCASE, 6);
     assertStringInstrWithOccurrence("x🙃yz🙃z🙃", "z🙃", -1, 1, UNICODE, 6);
     assertStringInstrWithOccurrence("x🙃yz🙃z🙃", "z🙃", -1, 1, UNICODE_CI, 6);
