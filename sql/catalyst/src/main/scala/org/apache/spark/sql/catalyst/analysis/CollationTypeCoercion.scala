@@ -21,6 +21,7 @@ import org.apache.spark.sql.catalyst.SQLConfHelper
 import org.apache.spark.sql.catalyst.analysis.CollationStrength.{Default, Explicit, Implicit, Indeterminate}
 import org.apache.spark.sql.catalyst.analysis.TypeCoercion.haveSameType
 import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.catalyst.expressions.variant.VariantGet
 import org.apache.spark.sql.catalyst.plans.logical.{Aggregate, LogicalPlan, Project}
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.catalyst.util.TypeUtils.toSQLExpr
@@ -398,6 +399,10 @@ object CollationTypeCoercion extends SQLConfHelper {
       }
 
       Some(addContextToStringType(cast.dataType, castStrength))
+
+    // A collated target type, not the path, decides the collation, like a column of that type.
+    case v: VariantGet if SchemaUtils.hasNonUTF8BinaryCollation(v.dataType) =>
+      Some(addContextToStringType(v.dataType, Implicit))
 
     case expr @ (_: NamedExpression | _: SubqueryExpression | _: VariableReference) =>
       Some(addContextToStringType(expr.dataType, Implicit))

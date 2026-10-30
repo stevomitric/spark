@@ -490,6 +490,47 @@ class CollationTypePrecedenceSuite extends SharedSparkSession {
     }
   }
 
+  testFixedPointAndSinglePass("variant_get with a collated target type has implicit strength") {
+    val tableName = "variant_get_tbl"
+    withTable(tableName) {
+      sql(s"CREATE TABLE $tableName (id INT, c STRING COLLATE UNICODE_CI, v VARIANT) " +
+        s"USING $dataSource")
+      sql(
+        s"""
+           |INSERT INTO $tableName SELECT id, 'OPEN', parse_json(j) FROM VALUES
+           |  (1, '{"s": "Open", "a": ["Open"]}'),
+           |  (2, '{"s": "open", "a": ["open"]}'),
+           |  (3, '{"s": "closed", "a": ["closed"]}') AS t(id, j)
+           |""".stripMargin)
+
+      Seq("variant_get", "try_variant_get").foreach { fn =>
+        val lcase = s"$fn(v, '$$.s', 'STRING COLLATE UTF8_LCASE')"
+        checkAnswer(
+          sql(s"SELECT DISTINCT COLLATION($lcase || 'a') FROM $tableName"),
+          Row(UTF8_LCASE_COLLATION_NAME))
+
+        Seq(
+          s"$lcase = 'OPEN'",
+          s"$lcase IN ('OPEN', 'x')",
+          s"startswith($lcase, 'OP')",
+          s"array_contains($fn(v, '$$.a', 'ARRAY<STRING COLLATE UTF8_LCASE>'), 'OPEN')",
+          s"$fn(v, '$$', 'STRUCT<s: STRING COLLATE UTF8_LCASE>').s = 'OPEN'").foreach { cond =>
+          checkAnswer(sql(s"SELECT id FROM $tableName WHERE $cond"), Seq(Row(1), Row(2)))
+        }
+
+        checkAnswer(
+          sql(s"SELECT id FROM $tableName WHERE $lcase = 'Open' COLLATE UTF8_BINARY"),
+          Seq(Row(1)))
+        assertIndeterminateCollation(sql(s"SELECT $lcase = c FROM $tableName"))
+
+        // A plain STRING target keeps default strength.
+        checkAnswer(
+          sql(s"SELECT id FROM $tableName WHERE $fn(v, '$$.s', 'STRING') = c"),
+          Seq(Row(1), Row(2)))
+      }
+    }
+  }
+
   test("str fns without params have default strength") {
     val tableName = "str_fns_tbl"
     val columnCollation = "UNICODE"
