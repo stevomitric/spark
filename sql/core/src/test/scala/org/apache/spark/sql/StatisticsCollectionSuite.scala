@@ -1020,6 +1020,16 @@ class StatisticsCollectionSuite extends StatisticsCollectionTestBase with Shared
       assert(newStats === newExpectedStats)
     }
   }
+
+  test("LogicalRDD stats rewrite to a new output ignores nested nullability") {
+    val source = Seq(AttributeReference("a", ArrayType(IntegerType, containsNull = false))())
+    val nullable = Seq(AttributeReference("b", ArrayType(IntegerType, containsNull = true))())
+    assert(LogicalRDD.buildOutputAssocForRewriteWithNewOutput(source, nullable) ===
+      Some(Map(source.head -> nullable.head)))
+
+    val otherType = Seq(AttributeReference("b", ArrayType(LongType))())
+    assert(LogicalRDD.buildOutputAssocForRewriteWithNewOutput(source, otherType).isEmpty)
+  }
 }
 
 /**

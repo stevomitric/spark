@@ -311,10 +311,14 @@ object ResolveWithCTE extends Rule[LogicalPlan] {
       columnNames: Option[Seq[String]]) = {
     recursion.transformUpWithSubqueriesAndPruning(_.containsPattern(CTE)) {
       case r: CTERelationRef if r.recursive && r.cteId == cteDefId =>
-        // We mark the output of UnionLoopRef as nullable as it may become NULL in the following
-        // iterations.
-        val ref =
-          UnionLoopRef(r.cteId, anchor.output.map(_.newInstance().withNullability(true)), false)
+        // We mark the output of UnionLoopRef as nullable, including nested types, as it may become
+        // NULL in the following iterations.
+        val ref = UnionLoopRef(
+          r.cteId,
+          anchor.output.map { a =>
+            a.newInstance().withNullability(true).withDataType(a.dataType.asNullable)
+          },
+          false)
         columnNames.map(UnresolvedSubqueryColumnAliases(_, ref)).getOrElse(ref)
     }
   }

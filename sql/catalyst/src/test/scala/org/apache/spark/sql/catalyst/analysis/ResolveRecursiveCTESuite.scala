@@ -20,8 +20,9 @@ package org.apache.spark.sql.catalyst.analysis
 
 import org.apache.spark.sql.catalyst.dsl.expressions._
 import org.apache.spark.sql.catalyst.dsl.plans._
-import org.apache.spark.sql.catalyst.expressions.{Alias, Literal}
+import org.apache.spark.sql.catalyst.expressions.{Alias, CreateArray, CreateMap, CreateNamedStruct, Literal}
 import org.apache.spark.sql.catalyst.plans.logical._
+import org.apache.spark.sql.types.{ArrayType, IntegerType, MapType, StringType, StructType}
 
 class ResolveRecursiveCTESuite extends AnalysisTest {
   // Motivated by:
@@ -115,5 +116,35 @@ class ResolveRecursiveCTESuite extends AnalysisTest {
     }
 
     comparePlans(analyzed, getAfterPlan())
+  }
+
+  // Motivated by:
+  // WITH RECURSIVE t AS (SELECT array(1), map('k', 1), named_struct('f', 1) UNION ALL
+  // SELECT * FROM t) SELECT * FROM t;
+  test("ResolveWithCTE marks nested types of UnionLoopRef output as nullable") {
+    val cteId = 0
+    val anchor = Project(Seq(
+      Alias(CreateArray(Seq(Literal(1))), "a")(),
+      Alias(CreateMap(Seq(Literal("k"), Literal(1))), "m")(),
+      Alias(CreateNamedStruct(Seq(Literal("f"), Literal(1))), "s")()), OneRowRelation())
+    assert(anchor.output.map(_.dataType) === Seq(
+      ArrayType(IntegerType, containsNull = false),
+      MapType(StringType, IntegerType, valueContainsNull = false),
+      new StructType().add("f", IntegerType, nullable = false)))
+
+    val cteRef = CTERelationRef(cteId, _resolved = false, output = Seq(), isStreaming = false)
+    val recursion = cteRef.copy(recursive = true).subquery("t")
+    val plan = WithCTE(
+      cteRef.copy(recursive = false),
+      Seq(CTERelationDef(anchor.union(recursion).subquery("t"), cteId)))
+
+    val refOutput = getAnalyzer.execute(plan).collectFirst {
+      case r: UnionLoopRef => r.output
+    }.get
+    assert(refOutput.forall(_.nullable))
+    assert(refOutput.map(_.dataType) === Seq(
+      ArrayType(IntegerType, containsNull = true),
+      MapType(StringType, IntegerType, valueContainsNull = true),
+      new StructType().add("f", IntegerType, nullable = true)))
   }
 }

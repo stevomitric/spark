@@ -26,6 +26,7 @@ import org.apache.spark.sql.catalyst.analysis.MultiInstanceRelation
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.logical._
 import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, PartitioningCollection, UnknownPartitioning}
+import org.apache.spark.sql.catalyst.types.DataTypeUtils
 import org.apache.spark.sql.catalyst.util.truncatedString
 import org.apache.spark.sql.classic.{Dataset, SparkSession}
 import org.apache.spark.sql.connector.read.streaming.SparkDataStream
@@ -235,12 +236,12 @@ object LogicalRDD extends Logging {
 
   // A version of buildOutputAssocForRewrite which doesn't assume that the names are the same,
   // because the new output can have different names. Used when copying the LogicalRDD with a new
-  // output
+  // output, which may differ in nested nullability.
   private[sql] def buildOutputAssocForRewriteWithNewOutput(
       source: Seq[Attribute],
       destination: Seq[Attribute]): Option[Map[Attribute, Attribute]] = {
     val rewrite = source.zip(destination).flatMap { case (attr1, attr2) =>
-      if (attr1.dataType == attr2.dataType) {
+      if (DataTypeUtils.equalsIgnoreNullability(attr1.dataType, attr2.dataType)) {
         Some(attr1 -> attr2)
       } else {
         None

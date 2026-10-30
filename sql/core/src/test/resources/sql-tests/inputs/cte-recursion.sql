@@ -744,6 +744,45 @@ WITH RECURSIVE t1(n) AS (
 )
 SELECT * FROM t1 LIMIT 25;
 
+-- Recursion writes NULLs into nested types that the anchor built as non-nullable
+SET spark.sql.cteRecursionAnchorRowsLimitToConvertToLocalRelation=0;
+
+WITH RECURSIVE t1(lvl, arr) AS (
+    SELECT 0, ARRAY(id) FROM range(3)
+    UNION ALL
+    SELECT lvl + 1, IF(lvl = 0, ARRAY(CAST(NULL AS BIGINT)), ARRAY(arr[0] + 1))
+    FROM t1 WHERE lvl < 2
+)
+SELECT * FROM t1;
+
+WITH RECURSIVE t1(lvl, m) AS (
+    SELECT 0, MAP('k', id) FROM range(3)
+    UNION ALL
+    SELECT lvl + 1, IF(lvl = 0, MAP('k', CAST(NULL AS BIGINT)), MAP('k', m['k'] + 1))
+    FROM t1 WHERE lvl < 2
+)
+SELECT * FROM t1;
+
+WITH RECURSIVE t1(lvl, s) AS (
+    SELECT 0, NAMED_STRUCT('a', ARRAY(id)) FROM range(3)
+    UNION ALL
+    SELECT lvl + 1,
+           IF(lvl = 0, NAMED_STRUCT('a', ARRAY(CAST(NULL AS BIGINT))), NAMED_STRUCT('a', ARRAY(s.a[0] + 1)))
+    FROM t1 WHERE lvl < 2
+)
+SELECT * FROM t1;
+
+WITH RECURSIVE t1(lvl, arr) AS (
+    SELECT 0, ARRAY(NAMED_STRUCT('a', id)) FROM range(3)
+    UNION ALL
+    SELECT lvl + 1,
+           IF(lvl = 0, ARRAY(CAST(NULL AS STRUCT<a: BIGINT>)), ARRAY(NAMED_STRUCT('a', arr[0].a + 1)))
+    FROM t1 WHERE lvl < 2
+)
+SELECT * FROM t1;
+
+SET spark.sql.cteRecursionAnchorRowsLimitToConvertToLocalRelation=100;
+
 -- Two calls to same rCTE with and without limit
 WITH RECURSIVE t1(n) AS (
     SELECT 1
