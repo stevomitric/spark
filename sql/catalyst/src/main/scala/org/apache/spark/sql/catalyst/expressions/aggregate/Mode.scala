@@ -87,6 +87,10 @@ private[aggregate] trait ModeCollationAware { self: Expression =>
     dataType match {
       // Key a binary value by content (see BinaryKey), not by array reference.
       case _ if data.isInstanceOf[Array[Byte]] => new BinaryKey(data.asInstanceOf[Array[Byte]])
+      // Key a floating-point value by its bits, since a boxed NaN is never == another one.
+      // `update` normalizes the values, so all NaNs (and zeros) share one bit pattern.
+      case DoubleType => Long.box(java.lang.Double.doubleToLongBits(data.asInstanceOf[Double]))
+      case FloatType => Int.box(java.lang.Float.floatToIntBits(data.asInstanceOf[Float]))
       case _ if UnsafeRowUtils.isBinaryStable(dataType) => data
       case st: StructType => processStructTypeWithBuffer(data.asInstanceOf[InternalRow], st)
       case at: ArrayType => processArrayTypeWithBuffer(at, data.asInstanceOf[ArrayData])

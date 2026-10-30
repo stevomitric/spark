@@ -708,4 +708,76 @@ class CollationAggregationSuite
           |  (X'02', 'z'), (X'02', 'z'), (X'02', 'z') AS t(b, c)""".stripMargin),
       Row("01"))
   }
+
+  test("mode folds a collated struct with a NaN floating-point field") {
+    // (NaN, 'pump-a') in any case occurs 4 times and (1.5, 'valve') 3 times. The NaN entries
+    // used not to fold, because boxed NaNs never compare equal, so 'valve' won.
+    Seq("DOUBLE", "FLOAT").foreach { floatType =>
+      withTable("t") {
+        sql("CREATE TABLE t (device STRING COLLATE UTF8_LCASE, " +
+          s"reading $floatType, site STRING) USING parquet")
+        sql(
+          s"""INSERT INTO t VALUES
+            |  ('pump-a', CAST('NaN' AS $floatType), 'north'),
+            |  ('PUMP-A', CAST('NaN' AS $floatType), 'north'),
+            |  ('pump-a', CAST('NaN' AS $floatType), 'north'),
+            |  ('Pump-A', CAST('NaN' AS $floatType), 'north'),
+            |  ('valve', 1.5, 'north'), ('valve', 1.5, 'north'), ('VALVE', 1.5, 'north')
+            |""".stripMargin)
+        withTempView("v") {
+          // Spread across partitions to also exercise the partial-buffer merge path.
+          spark.table("t").repartition(3).createOrReplaceTempView("v")
+          val s = "named_struct('reading', reading, 'device', device)"
+
+          checkAnswer(
+            sql(s"SELECT isnan(mode($s).reading), " +
+              s"isnan(mode() WITHIN GROUP (ORDER BY $s).reading) FROM v"),
+            Row(true, true))
+          checkAnswer(
+            sql(s"SELECT site, lower(mode($s).device) FROM v GROUP BY site"),
+            Row("north", "pump-a"))
+          checkAnswer(
+            sql(s"SELECT DISTINCT lower(mode($s) OVER (PARTITION BY site).device) FROM v"),
+            Row("pump-a"))
+          checkAnswer(sql(s"SELECT isnan(mode(array($s))[0].reading) FROM v"), Row(true))
+          checkAnswer(
+            sql("SELECT isnan(map_values(mode(map(device, reading)))[0]), " +
+              "isnan(map_keys(mode(map(reading, device)))[0]) FROM v"),
+            Row(true, true))
+          // The result is one of the inputs, not a collation key.
+          val device = sql(s"SELECT mode($s).device FROM v").head().getString(0)
+          assert(Set("pump-a", "PUMP-A", "Pump-A").contains(device), device)
+
+          val modes = pandasMode(sql(s"SELECT $s AS s FROM v"), "s", ignoreNA = true)
+            .map(_.asInstanceOf[Row])
+          assert(modes.length == 1, modes)
+          assert(modes.head.getAs[Number](0).doubleValue().isNaN, modes)
+
+          // Finite values fold as before.
+          checkAnswer(
+            sql("SELECT mode(named_struct('reading', IF(isnan(reading), 2.5D, reading), " +
+              "'device', device)).reading FROM v"),
+            Row(2.5))
+        }
+      }
+
+      // Signed zeros still fold: update normalizes -0.0 to 0.0 before the fold.
+      checkAnswer(
+        sql(
+          s"""SELECT mode(named_struct('z', CAST(z AS $floatType), 's', s COLLATE UTF8_LCASE)).z
+            |  AS z FROM VALUES (-0.0D, 'a'), (0.0D, 'A'), (-0.0D, 'A'), (0.0D, 'a'),
+            |  (9.0D, 'z'), (9.0D, 'z'), (9.0D, 'z') AS t(z, s)""".stripMargin)
+          .selectExpr("CAST(z AS DOUBLE)"),
+        Row(0.0))
+
+      // A null field stays apart from 0.0, so 9.0 (3) outvotes both (2 each).
+      checkAnswer(
+        sql(
+          s"""SELECT mode(named_struct('z', CAST(z AS $floatType), 's', s COLLATE UTF8_LCASE)).z
+            |  AS z FROM VALUES (NULL, 'a'), (NULL, 'A'), (0.0D, 'a'), (0.0D, 'A'),
+            |  (9.0D, 'z'), (9.0D, 'z'), (9.0D, 'z') AS t(z, s)""".stripMargin)
+          .selectExpr("CAST(z AS DOUBLE)"),
+        Row(9.0))
+    }
+  }
 }
