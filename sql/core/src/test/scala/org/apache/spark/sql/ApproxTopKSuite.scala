@@ -366,6 +366,38 @@ class ApproxTopKSuite extends SharedSparkSession {
   }
   // scalastyle:on nonascii
 
+  // -0.0 and 0.0 are equal under GROUP BY and `=`, so they must be counted as one item.
+  Seq[(String, Any, Any)](("FLOAT", 0.0f, 2.5f), ("DOUBLE", 0.0d, 2.5d)).foreach {
+    case (tpe, zero, other) =>
+      def values(items: String*): String =
+        items.map(i => s"(CAST('$i' AS $tpe))").mkString("VALUES ", ", ", " AS tab(expr)")
+      val signedZeros = values("0.0", "-0.0", "2.5", "0.0", "-0.0", "2.5", "2.5")
+      val expected = Row(Seq(Row(zero, 4), Row(other, 3)))
+
+      test(s"SPARK-XXXXX: approx_top_k counts -0.0 and 0.0 as one item ($tpe)") {
+        checkAnswer(sql(s"SELECT approx_top_k(expr) FROM $signedZeros"), expected)
+      }
+
+      test(s"SPARK-XXXXX: approx_top_k_accumulate/estimate counts -0.0 and 0.0 as one item " +
+        s"($tpe)") {
+        checkAnswer(
+          sql(s"SELECT approx_top_k_estimate(approx_top_k_accumulate(expr)) FROM $signedZeros"),
+          expected)
+      }
+
+      test(s"SPARK-XXXXX: approx_top_k_combine merges -0.0 and 0.0 across sketches ($tpe)") {
+        val res = sql(
+          s"""SELECT approx_top_k_estimate(approx_top_k_combine(sketch))
+             |FROM (SELECT approx_top_k_accumulate(expr) AS sketch
+             |        FROM ${values("-0.0", "-0.0", "2.5")}
+             |      UNION ALL
+             |      SELECT approx_top_k_accumulate(expr) AS sketch
+             |        FROM ${values("0.0", "0.0", "2.5", "2.5")})
+             |""".stripMargin)
+        checkAnswer(res, expected)
+      }
+  }
+
   test("SPARK-52588: accumulate and estimate of Decimal(4, 1)") {
     val res = sql("SELECT approx_top_k_estimate(approx_top_k_accumulate(expr, 10)) " +
       "FROM VALUES CAST(0.0 AS DECIMAL(4, 1)), CAST(0.0 AS DECIMAL(4, 1)), " +

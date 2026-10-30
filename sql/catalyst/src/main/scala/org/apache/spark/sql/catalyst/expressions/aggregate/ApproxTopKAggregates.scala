@@ -29,6 +29,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.{FunctionRegistry, TypeCheckResult}
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.{TypeCheckFailure, TypeCheckSuccess}
 import org.apache.spark.sql.catalyst.expressions.{ArrayOfCollatedStringsSerDe, ArrayOfDecimalsSerDe, Cast, CollatedString, Expression, ExpressionDescription, ImplicitCastInputTypes, Literal}
+import org.apache.spark.sql.catalyst.optimizer.NormalizeFloatingNumbers.{DOUBLE_NORMALIZER, FLOAT_NORMALIZER}
 import org.apache.spark.sql.catalyst.trees.{BinaryLike, TernaryLike}
 import org.apache.spark.sql.catalyst.util.{CollationFactory, GenericArrayData, UnsafeRowUtils}
 import org.apache.spark.sql.errors.QueryExecutionErrors
@@ -387,10 +388,13 @@ class ApproxTopKAggregateBuffer[T](val sketch: ItemsSketch[T], private var nullC
           sketch.asInstanceOf[ItemsSketch[Int]].update(v.asInstanceOf[Int])
         case _: LongType =>
           sketch.asInstanceOf[ItemsSketch[Long]].update(v.asInstanceOf[Long])
+        // The sketch keys items by equals(), where -0.0 != 0.0; normalize so they count as one.
         case _: FloatType =>
-          sketch.asInstanceOf[ItemsSketch[Float]].update(v.asInstanceOf[Float])
+          sketch.asInstanceOf[ItemsSketch[Float]]
+            .update(FLOAT_NORMALIZER(v).asInstanceOf[Float])
         case _: DoubleType =>
-          sketch.asInstanceOf[ItemsSketch[Double]].update(v.asInstanceOf[Double])
+          sketch.asInstanceOf[ItemsSketch[Double]]
+            .update(DOUBLE_NORMALIZER(v).asInstanceOf[Double])
         case _: DateType =>
           sketch.asInstanceOf[ItemsSketch[Int]].update(v.asInstanceOf[Int])
         case _: TimestampType =>
