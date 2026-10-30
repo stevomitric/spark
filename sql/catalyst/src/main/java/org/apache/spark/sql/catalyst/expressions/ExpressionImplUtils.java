@@ -373,7 +373,7 @@ public class ExpressionImplUtils {
       while (wordInstance.next() != BreakIterator.DONE) {
         String word = sentence.substring(wordIndex, wordInstance.current());
         wordIndex = wordInstance.current();
-        if (Character.isLetterOrDigit(word.charAt(0))) {
+        if (Character.isLetterOrDigit(word.codePointAt(0))) {
           words.add(UTF8String.fromString(word));
         }
       }

@@ -2412,6 +2412,18 @@ class StringExpressionsSuite extends SparkFunSuite with ExpressionEvalHelper {
       Sentences(Literal("\"quote"), Literal("\"quote"), Literal("\"quote")).replacement :: Nil)
   }
 
+  test("SPARK-XXXXX: Sentences keeps words starting with a supplementary character") {
+    // scalastyle:off nonascii
+    checkEvaluation(Sentences("𝐇𝐞𝐥𝐥𝐨 world 𝟏𝟐𝟑"), Seq(Seq("𝐇𝐞𝐥𝐥𝐨", "world", "𝟏𝟐𝟑")))
+    checkEvaluation(Sentences("𞤀𞤣𞤤𞤢𞤥 𞤆𞤵𞤤𞤢𞤪 is spoken in Guinea."),
+      Seq(Seq("𞤀𞤣𞤤𞤢𞤥", "𞤆𞤵𞤤𞤢𞤪", "is", "spoken", "in", "Guinea")))
+    checkEvaluation(Sentences("𠮷野家で食べた. 𠮷田さん", "ja", "JP"),
+      Seq(Seq("𠮷", "野家", "で", "食", "べた"), Seq("𠮷", "田", "さん")))
+    // Supplementary symbols are still not words.
+    checkEvaluation(Sentences("😀 smile"), Seq(Seq("smile")))
+    // scalastyle:on nonascii
+  }
+
   test("SPARK-33386: elt ArrayIndexOutOfBoundsException") {
     Seq(true, false).foreach { ansiEnabled =>
       withSQLConf(SQLConf.ANSI_ENABLED.key -> ansiEnabled.toString) {
