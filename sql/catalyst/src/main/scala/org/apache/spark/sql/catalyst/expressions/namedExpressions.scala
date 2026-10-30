@@ -463,6 +463,8 @@ case class OuterReference(e: NamedExpression)
   extends LeafExpression with NamedExpression with Unevaluable {
   override def dataType: DataType = e.dataType
   override def nullable: Boolean = e.nullable
+  // Keep the metadata (e.g. the raw CHAR/VARCHAR type) when this reference is aliased.
+  override def metadata: Metadata = e.metadata
   override def prettyName: String = "outer"
 
   override def sql: String =
