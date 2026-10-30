@@ -35,6 +35,7 @@ import org.apache.spark.sql.catalyst.expressions.{
 import org.apache.spark.sql.catalyst.expressions.aggregate.{
   AggregateExpression,
   AggregateFunction,
+  AnyValue,
   ApproximatePercentile,
   First,
   Last,
@@ -86,8 +87,8 @@ object PivotTransformer extends AliasHelper with SQLConfHelper {
    *        Create a single [[Aggregate]] with filtered aggregates for each pivot value. For each
    *        aggregate and pivot value combination:
    *        - Wrap aggregate children with `If(pivotColumn == pivotValue, expr, null)` expressions.
-   *        - Handle special cases for [[First]], [[Last]], and [[ApproximatePercentile]] which
-   *          have specific semantics around null handling.
+   *        - Handle special cases for [[First]], [[Last]], [[AnyValue]] and
+   *          [[ApproximatePercentile]] which have specific semantics around null handling.
    */
   def apply(
       child: LogicalPlan,
@@ -160,6 +161,9 @@ object PivotTransformer extends AliasHelper with SQLConfHelper {
                 First(createIfExpression(expression, pivotColumn, value), true)
               case Last(expression, _) =>
                 Last(createIfExpression(expression, pivotColumn, value), true)
+              // AnyValue is replaced by First only after analysis, so it needs its own case.
+              case AnyValue(expression, _) =>
+                AnyValue(createIfExpression(expression, pivotColumn, value), true)
               case approximatePercentile: ApproximatePercentile =>
                 approximatePercentile.withNewChildren(
                   createIfExpression(approximatePercentile.first, pivotColumn, value) ::

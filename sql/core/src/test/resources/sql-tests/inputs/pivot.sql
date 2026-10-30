@@ -16,6 +16,15 @@ create temporary view yearsWithComplexTypes as select * from values
   (2013, array(2, 2), map('2', 2), struct(2, 'b'))
   as yearsWithComplexTypes(y, a, m, s);
 
+create temporary view orders as select * from values
+  (1, 1, 'ann', 10),
+  (1, 2, 'bob', 20),
+  (2, 2, 'dan', 30),
+  (2, 1, 'eve', 40),
+  (3, 1, null, 50),
+  (3, 2, 'fay', null)
+  as orders(cust, region, rep, amt);
+
 -- pivot courses
 SELECT * FROM (
   SELECT year, course, earnings FROM courseSales
@@ -317,3 +326,19 @@ PIVOT (
   FOR course IN ('dotNET', 'Java')
 ) pv
 JOIN years y ON pv.year = y.y;
+
+-- pivot any_value on a STRING column: rows of other pivot values must not turn a value into NULL
+SELECT * FROM (
+  SELECT cust, region, rep FROM orders
+)
+PIVOT (
+  any_value(rep)
+  FOR region IN (1 AS one, 2 AS two, 3 AS three)
+);
+
+-- pivot any_value on a numeric column next to a STRING aggregate
+SELECT * FROM orders
+PIVOT (
+  any_value(amt) a, any_value(rep) r
+  FOR region IN (1, 2)
+);

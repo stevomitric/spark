@@ -36,6 +36,21 @@ struct<>
 
 
 -- !query
+create temporary view orders as select * from values
+  (1, 1, 'ann', 10),
+  (1, 2, 'bob', 20),
+  (2, 2, 'dan', 30),
+  (2, 1, 'eve', 40),
+  (3, 1, null, 50),
+  (3, 2, 'fay', null)
+  as orders(cust, region, rep, amt)
+-- !query schema
+struct<>
+-- !query output
+
+
+
+-- !query
 SELECT * FROM (
   SELECT year, course, earnings FROM courseSales
 )
@@ -593,3 +608,33 @@ struct<year:int,dotNET:bigint,s:int>
 -- !query output
 2012	15000	1
 2013	48000	2
+
+
+-- !query
+SELECT * FROM (
+  SELECT cust, region, rep FROM orders
+)
+PIVOT (
+  any_value(rep)
+  FOR region IN (1 AS one, 2 AS two, 3 AS three)
+)
+-- !query schema
+struct<cust:int,one:string,two:string,three:string>
+-- !query output
+1	ann	bob	NULL
+2	eve	dan	NULL
+3	NULL	fay	NULL
+
+
+-- !query
+SELECT * FROM orders
+PIVOT (
+  any_value(amt) a, any_value(rep) r
+  FOR region IN (1, 2)
+)
+-- !query schema
+struct<cust:int,1_a:int,1_r:string,2_a:int,2_r:string>
+-- !query output
+1	10	ann	20	bob
+2	40	eve	30	dan
+3	50	NULL	NULL	fay
