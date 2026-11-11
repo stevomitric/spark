@@ -27,6 +27,7 @@ import org.apache.spark.sql.catalyst.plans.logical.statsEstimation.ColumnStatsMa
 import org.apache.spark.sql.catalyst.plans.logical.statsEstimation.EstimationUtils._
 import org.apache.spark.sql.catalyst.util.DateTimeUtils
 import org.apache.spark.sql.types._
+import org.apache.spark.unsafe.types.TimestampNanosVal
 
 /**
  * In this test suite, we test predicates containing the following operators:
@@ -987,6 +988,48 @@ class FilterEstimationSuite extends StatsEstimationTestBase {
     assert(columnStatsMap.hasMinMaxStats(attrNoDistinct))
     assert(columnStatsMap.hasMinMaxStats(attrNoCount))
     assert(!columnStatsMap.hasMinMaxStats(attrNoMinMax))
+  }
+
+  test("SPARK-57812: strict comparisons on nanos sharing a microsecond with min/max") {
+    // 2022-01-01 00:00:00.000000100 to 2022-01-01 00:00:09.000000900.
+    val min = TimestampNanosVal.fromParts(1640995200000000L, 100.toShort)
+    val max = TimestampNanosVal.fromParts(1640995209000000L, 900.toShort)
+    Seq(TimestampNTZNanosType(9), TimestampLTZNanosType(9)).foreach { dt =>
+      val attr = AttributeReference("cnanos", dt)()
+      val colStat = ColumnStat(distinctCount = Some(4), min = Some(min), max = Some(max),
+        nullCount = Some(0), avgLen = Some(8), maxLen = Some(8))
+      val stats = AttributeMap(Seq(attr -> colStat))
+
+      val low = TimestampNanosVal.fromParts(1640995200000000L, 500.toShort)
+      validateEstimatedStats(
+        Filter(LessThan(attr, Literal(low, dt)), childStatsTestPlan(Seq(attr), 4L, stats)),
+        Seq(attr -> colStat.copy(distinctCount = Some(1), max = Some(low))),
+        expectedRowCount = 1)
+
+      val high = TimestampNanosVal.fromParts(1640995209000000L, 500.toShort)
+      validateEstimatedStats(
+        Filter(GreaterThan(attr, Literal(high, dt)), childStatsTestPlan(Seq(attr), 4L, stats)),
+        Seq(attr -> colStat.copy(distinctCount = Some(1), min = Some(high))),
+        expectedRowCount = 1)
+
+      // All values within one microsecond.
+      val narrowMax = TimestampNanosVal.fromParts(1640995200000000L, 900.toShort)
+      val narrowStats = AttributeMap(Seq(attr -> colStat.copy(max = Some(narrowMax))))
+      Seq[Expression](LessThan(attr, Literal(low, dt)), GreaterThan(attr, Literal(low, dt)))
+        .foreach { cond =>
+          val filter = Filter(cond, childStatsTestPlan(Seq(attr), 4L, narrowStats))
+          assert(filter.stats.rowCount.contains(4), cond)
+        }
+
+      val other = AttributeReference("cnanos2", dt)()
+      val otherStat = colStat.copy(min = Some(TimestampNanosVal.fromParts(1640995209000000L,
+        500.toShort)), max = Some(TimestampNanosVal.fromParts(1640995300000000L, 0.toShort)))
+      val twoCols = AttributeMap(Seq(attr -> colStat, other -> otherStat))
+      Seq[Expression](GreaterThan(attr, other), LessThan(other, attr)).foreach { cond =>
+        val filter = Filter(cond, childStatsTestPlan(Seq(attr, other), 4L, twoCols))
+        assert(filter.stats.rowCount.exists(_ > 0), cond)
+      }
+    }
   }
 
   private def childStatsTestPlan(

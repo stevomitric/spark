@@ -318,9 +318,10 @@ case class FilterEstimation(
     }
 
     attr.dataType match {
-      case _: NumericType | DateType | TimestampType | TimestampNTZType | BooleanType |
-           _: AnyTimestampNanoType =>
+      case _: NumericType | DateType | TimestampType | TimestampNTZType | BooleanType =>
         evaluateBinaryForNumeric(op, attr, literal, update)
+      case dt: AnyTimestampNanoType =>
+        evaluateBinaryForNumeric(nonStrictForNanos(op, dt), attr, literal, update)
       case _: StringType | BinaryType =>
         // TODO: It is difficult to support other binary comparisons for String/Binary
         // type without min/max and advanced statistics like histogram.
@@ -328,6 +329,18 @@ case class FilterEstimation(
         None
     }
   }
+
+  /**
+   * Nanosecond timestamps are estimated at microsecond resolution (see
+   * [[EstimationUtils.toDouble]]), so a strict bound can't rule out values in its own
+   * microsecond. Estimate `<` / `>` as `<=` / `>=` to avoid a false zero-row estimate.
+   */
+  private def nonStrictForNanos(op: BinaryComparison, dataType: DataType): BinaryComparison =
+    (op, dataType) match {
+      case (LessThan(l, r), _: AnyTimestampNanoType) => LessThanOrEqual(l, r)
+      case (GreaterThan(l, r), _: AnyTimestampNanoType) => GreaterThanOrEqual(l, r)
+      case _ => op
+    }
 
   /**
    * Returns a percentage of rows meeting an equality (=) expression.
@@ -745,7 +758,8 @@ case class FilterEstimation(
 
     // determine the overlapping degree between predicate interval and column's interval
     val allNotNull = (colStatLeft.nullCount.get == 0) && (colStatRight.nullCount.get == 0)
-    val (noOverlap: Boolean, completeOverlap: Boolean) = op match {
+    val overlapOp = nonStrictForNanos(op, attrLeft.dataType)
+    val (noOverlap: Boolean, completeOverlap: Boolean) = overlapOp match {
       // Left < Right or Left <= Right
       // - no overlap:
       //      minRight           maxRight     minLeft       maxLeft
